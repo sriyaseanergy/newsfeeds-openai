@@ -12,6 +12,7 @@ from app.editorial.classification.provider import (
     ClassificationProvider,
     MockClassificationProvider,
 )
+from app.editorial.classification.prompt_factory import PromptFactory
 from app.editorial.classification.service import ClassificationService
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "ClassificationService",
     "EditorialClassification",
     "MockClassificationProvider",
+    "PromptFactory",
     "Severity",
 ]
