@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     openai_enrichment_model: str = "gpt-5-mini"
     openai_base_url: str | None = None
 
+    # Microsoft Graph email settings.
+    azure_tenant_id: str = ""
+    azure_client_id: str = ""
+    azure_client_secret: str = ""
+    graph_sender_email: str = ""
+    graph_timeout_seconds: int = 30
+
     @property
     def openai_model(self) -> str:
         """
