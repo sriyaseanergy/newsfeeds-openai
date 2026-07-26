@@ -26,6 +26,7 @@ class Article(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    source_identifier: Mapped[str | None] = mapped_column(String(512), nullable=True)
     author: Mapped[str | None] = mapped_column(String(255), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)

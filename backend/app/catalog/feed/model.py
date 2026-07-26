@@ -1,15 +1,20 @@
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from app.infrastructure.database.base import Base
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from app.catalog.article.model import Article
     from app.catalog.technology_domain.model import TechnologyDomain
+
+
+class FetchKind(str, Enum):
+    RSS = "RSS"
 
 
 class Feed(Base):
@@ -33,6 +38,12 @@ class Feed(Base):
         nullable=False,
         default=True,
         server_default=text("true"),
+    )
+    fetch_kind: Mapped[FetchKind] = mapped_column(
+        SAEnum(FetchKind, name="feed_fetch_kind"),
+        nullable=False,
+        default=FetchKind.RSS,
+        server_default=FetchKind.RSS.value,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

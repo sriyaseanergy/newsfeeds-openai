@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
+from app.catalog.feed.model import FetchKind
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
@@ -12,6 +13,7 @@ class FeedCreate(BaseModel):
     description: str | None = None
     url: HttpUrl
     is_enabled: bool = True
+    fetch_kind: FetchKind = FetchKind.RSS
 
     @field_validator("name")
     @classmethod
@@ -30,6 +32,7 @@ class FeedUpdate(BaseModel):
     description: str | None = None
     url: HttpUrl | None = None
     is_enabled: bool | None = None
+    fetch_kind: FetchKind | None = None
 
     @field_validator("name")
     @classmethod
@@ -51,6 +54,7 @@ class FeedResponse(BaseModel):
     description: str | None
     url: str
     is_enabled: bool
+    fetch_kind: FetchKind
     created_at: datetime
     updated_at: datetime
 
