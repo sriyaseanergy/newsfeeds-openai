@@ -8,31 +8,33 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from app.catalog.article.model import Article
-    from app.catalog.technology_domain.model import TechnologyDomain
+    from app.catalog.feed.model import Feed
 
 
-class Feed(Base):
-    __tablename__ = "feeds"
+class Article(Base):
+    __tablename__ = "articles"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
     )
-    technology_domain_id: Mapped[UUID] = mapped_column(
+    feed_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("technology_domains.id"),
+        ForeignKey("feeds.id"),
         nullable=False,
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
-    is_enabled: Mapped[bool] = mapped_column(
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_processed: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=True,
-        server_default=text("true"),
+        default=False,
+        server_default=text("false"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -46,9 +48,5 @@ class Feed(Base):
         onupdate=func.now(),
     )
 
-    technology_domain: Mapped["TechnologyDomain"] = relationship(back_populates="feeds")
-    articles: Mapped[list["Article"]] = relationship(
-        back_populates="feed",
-        cascade="all, delete-orphan",
-    )
+    feed: Mapped["Feed"] = relationship(back_populates="articles")
 
