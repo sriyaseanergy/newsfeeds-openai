@@ -6,3 +6,4 @@ backend/.env
 frontend/.env
 *.pyc
 frontend/node_modules/
+.vscode/
