@@ -3,24 +3,30 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from app.infrastructure.database.base import Base
-from sqlalchemy import Boolean, DateTime, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from app.catalog.feed.model import Feed
+    from app.catalog.technology_domain.model import TechnologyDomain
 
 
-class TechnologyDomain(Base):
-    __tablename__ = "technology_domains"
+class Feed(Base):
+    __tablename__ = "feeds"
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    technology_domain_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("technology_domains.id"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     is_enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
@@ -38,8 +44,6 @@ class TechnologyDomain(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
-    feeds: Mapped[list["Feed"]] = relationship(
-        back_populates="technology_domain",
-        cascade="all, delete-orphan",
-    )
+
+    technology_domain: Mapped["TechnologyDomain"] = relationship(back_populates="feeds")
 

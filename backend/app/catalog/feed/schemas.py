@@ -1,0 +1,56 @@
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+
+
+class FeedCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    technology_domain_id: UUID
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    url: HttpUrl
+    is_enabled: bool = True
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("name must not be empty")
+        return name
+
+
+class FeedUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    technology_domain_id: UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    url: HttpUrl | None = None
+    is_enabled: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        name = value.strip()
+        if not name:
+            raise ValueError("name must not be empty")
+        return name
+
+
+class FeedResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: UUID
+    technology_domain_id: UUID
+    name: str
+    description: str | None
+    url: str
+    is_enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
