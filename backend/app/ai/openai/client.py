@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Mapping
 from functools import lru_cache
-from typing import Any
+from typing import Any, TypeVar
 
 from app.core.errors import (
     ConfigurationError,
@@ -20,6 +20,9 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
+from openai.types.responses import ParsedResponse
+
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +118,68 @@ class OpenAIClient:
         except APIError as exc:
             logger.warning("OpenAI API error encountered.")
             raise ExternalServiceError("OpenAI API request failed.") from exc
+        except Exception as exc:
+            logger.exception("Unexpected OpenAI client failure.")
+            raise ExternalServiceError("Unexpected OpenAI client failure.") from exc
+
+    def parse_response(
+        self,
+        *,
+        model: str,
+        input: str | list[dict[str, Any]],
+        text_format: type[T],
+        instructions: str | None = None,
+        metadata: Mapping[str, str] | None = None,
+        max_output_tokens: int | None = None,
+    ) -> T:
+        logger.info("OpenAI structured response request started.")
+
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "input": input,
+            "text_format": text_format,
+        }
+
+        if instructions is not None:
+            request_kwargs["instructions"] = instructions
+
+        if metadata is not None:
+            request_kwargs["metadata"] = dict(metadata)
+
+        if max_output_tokens is not None:
+            request_kwargs["max_output_tokens"] = max_output_tokens
+
+        try:
+            response: ParsedResponse[T] = self._client.responses.parse(**request_kwargs)
+
+            if response.output_parsed is None:
+                raise ExternalServiceError("OpenAI returned no structured response.")
+
+            logger.info("OpenAI structured response request completed.")
+            return response.output_parsed
+
+        except APITimeoutError as exc:
+            logger.warning("OpenAI response request timed out.")
+            raise ExternalServiceTimeoutError("OpenAI request timed out.") from exc
+
+        except AuthenticationError as exc:
+            logger.warning("OpenAI authentication failed.")
+            raise ExternalServiceAuthenticationError(
+                "OpenAI authentication failed."
+            ) from exc
+
+        except RateLimitError as exc:
+            logger.warning("OpenAI rate limit encountered.")
+            raise ExternalServiceRateLimitError("OpenAI rate limit exceeded.") from exc
+
+        except APIConnectionError as exc:
+            logger.warning("OpenAI connection error encountered.")
+            raise ExternalServiceError("OpenAI connection error.") from exc
+
+        except APIError as exc:
+            logger.warning("OpenAI API error encountered.")
+            raise ExternalServiceError("OpenAI API request failed.") from exc
+
         except Exception as exc:
             logger.exception("Unexpected OpenAI client failure.")
             raise ExternalServiceError("Unexpected OpenAI client failure.") from exc
