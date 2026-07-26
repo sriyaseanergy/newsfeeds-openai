@@ -1,6 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
+from app.catalog.technology_domain.model import TechnologyDomainSchedule
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -10,6 +11,7 @@ class TechnologyDomainCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     is_enabled: bool = True
+    schedule: TechnologyDomainSchedule = TechnologyDomainSchedule.DAILY
 
     @field_validator("name")
     @classmethod
@@ -26,6 +28,7 @@ class TechnologyDomainUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     is_enabled: bool | None = None
+    schedule: TechnologyDomainSchedule | None = None
 
     @field_validator("name")
     @classmethod
@@ -45,6 +48,6 @@ class TechnologyDomainResponse(BaseModel):
     name: str
     description: str | None
     is_enabled: bool
+    schedule: TechnologyDomainSchedule
     created_at: datetime
     updated_at: datetime
-

@@ -1,4 +1,7 @@
-from app.catalog.technology_domain.model import TechnologyDomain
+from app.catalog.technology_domain.model import (
+    TechnologyDomain,
+    TechnologyDomainSchedule,
+)
 from app.catalog.technology_domain.schemas import (
     TechnologyDomainCreate,
     TechnologyDomainResponse,
@@ -8,7 +11,7 @@ from app.catalog.technology_domain.schemas import (
 __all__ = [
     "TechnologyDomain",
     "TechnologyDomainCreate",
-    "TechnologyDomainUpdate",
     "TechnologyDomainResponse",
+    "TechnologyDomainSchedule",
+    "TechnologyDomainUpdate",
 ]
-
