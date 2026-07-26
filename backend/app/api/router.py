@@ -1,6 +1,8 @@
 from app.api.health.router import router as health_router
+from app.catalog.technology_domain.router import router as technology_domain_router
 from fastapi import APIRouter
 
 api_router = APIRouter()
 
 api_router.include_router(health_router)
+api_router.include_router(technology_domain_router)

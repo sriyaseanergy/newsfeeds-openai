@@ -2,6 +2,7 @@ from logging.config import fileConfig
 
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.database.base import Base
+from app.infrastructure.database import model_registry as _model_registry  # noqa: F401
 from sqlalchemy import create_engine
 from sqlalchemy import pool
 from sqlalchemy.engine import make_url
