@@ -1,16 +1,16 @@
-import logging
 import time
 from typing import Any
 
 import msal
 import requests
 from app.core.settings import Settings, get_settings
+from app.infrastructure.logging import get_logger
 from app.notifications.email.exceptions import (
     EmailAuthenticationError,
     EmailSendError,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 GRAPH_API_BASE_URL = "https://graph.microsoft.com/v1.0"
 GRAPH_DEFAULT_SCOPE = ["https://graph.microsoft.com/.default"]
@@ -56,8 +56,10 @@ class GraphClient:
         now = int(time.time())
         # Refresh a little before expiration to avoid edge race.
         if self._access_token and now < (self._expires_at - 60):
+            logger.info("Reusing cached Microsoft Graph access token.")
             return self._access_token
 
+        logger.info("Acquiring Microsoft Graph access token.")
         token_result = self._msal_app.acquire_token_for_client(
             scopes=GRAPH_DEFAULT_SCOPE
         )
@@ -71,6 +73,7 @@ class GraphClient:
         expires_in = int(token_result.get("expires_in", 3600))
         self._access_token = access_token
         self._expires_at = now + expires_in
+        logger.info("Microsoft Graph access token acquired (expires_in=%ss).", expires_in)
         return access_token
 
     def send_request(

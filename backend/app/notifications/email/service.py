@@ -1,11 +1,12 @@
-import logging
+from time import perf_counter
 
 from app.core.settings import Settings, get_settings
+from app.infrastructure.logging import get_logger
 from app.notifications.email.exceptions import EmailSendError
 from app.notifications.email.graph_client import GraphClient
 from app.notifications.email.models import EmailAttachment, EmailMessage, EmailRecipient
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EmailService:
@@ -53,8 +54,15 @@ class EmailService:
         sender = self.settings.graph_sender_email
         path = f"/users/{sender}/sendMail"
 
-        logger.info("Email send started via Microsoft Graph.")
+        recipient_count = len(recipients)
+        logger.info(
+            "Email send started via Microsoft Graph (sender=%s recipient_count=%s).",
+            sender,
+            recipient_count,
+        )
+        started_at = perf_counter()
         response = self.graph_client.send_request("POST", path, json_body=payload)
+        elapsed_seconds = perf_counter() - started_at
 
         # Graph sendMail typically returns 202 Accepted.
         if response.status_code not in (200, 202):
@@ -62,6 +70,10 @@ class EmailService:
                 f"Unexpected Graph sendMail status: {response.status_code}"
             )
 
-        logger.info("Email send completed via Microsoft Graph.")
+        logger.info(
+            "Email send completed via Microsoft Graph (status=%s duration=%.2fs).",
+            response.status_code,
+            elapsed_seconds,
+        )
         return True
 

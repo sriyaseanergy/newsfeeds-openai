@@ -1,4 +1,3 @@
-import logging
 from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any, TypeVar
@@ -11,6 +10,7 @@ from app.core.errors import (
     ExternalServiceTimeoutError,
 )
 from app.core.settings import Settings, get_settings
+from app.infrastructure.logging import get_logger
 
 from openai import (
     APIConnectionError,
@@ -20,11 +20,10 @@ from openai import (
     OpenAI,
     RateLimitError,
 )
-from openai.types.responses import ParsedResponse
 
 T = TypeVar("T")
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @lru_cache
@@ -150,7 +149,7 @@ class OpenAIClient:
             request_kwargs["max_output_tokens"] = max_output_tokens
 
         try:
-            response: ParsedResponse[T] = self._client.responses.parse(**request_kwargs)
+            response = self._client.responses.parse(**request_kwargs)
 
             if response.output_parsed is None:
                 raise ExternalServiceError("OpenAI returned no structured response.")

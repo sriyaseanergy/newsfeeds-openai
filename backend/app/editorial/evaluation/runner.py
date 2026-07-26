@@ -18,6 +18,7 @@ import argparse
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
+from time import perf_counter
 from uuid import UUID
 
 from app.catalog.article.model import Article
@@ -30,13 +31,14 @@ from app.editorial.classification.models import (
     EditorialClassification,
 )
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
+from app.infrastructure.logging import configure_logging, get_logger
 from app.infrastructure.database.session import SessionLocal
 from app.ingestion.mapper import ArticleMapper
 from app.ingestion.models import NormalizedArticleData
 from app.ingestion.rss_client import RSSClient
 from pydantic import ValidationError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -72,8 +74,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    run_started = perf_counter()
     args = parse_args()
     logger.info("Starting evaluation runner")
+    logger.info("==============================")
+    logger.info("Newsletter Run Started")
+    logger.info("==============================")
+    logger.info("Selected newsletter domain: %s", args.domain)
     print("=" * 70)
     print("Editorial Intelligence Evaluation")
     print("=" * 70)
@@ -94,6 +101,7 @@ def main() -> None:
             domain=args.domain,
             max_feeds=args.max_feeds,
         )
+        logger.info("Feeds selected: %s", len(feeds))
 
         stats = RunnerStats(selected_feeds=len(feeds))
         seen_urls: set[str] = set()
@@ -102,19 +110,29 @@ def main() -> None:
             print("No enabled feeds found for the selected domain.")
             print()
             _print_summary(stats)
+            logger.info("Run completed with no eligible feeds.")
             logger.info("Evaluation completed.")
             return
 
         for feed in feeds:
+            feed_started = perf_counter()
             print(f"Feed: {feed.name} ({feed.url})")
             try:
                 entries = rss_client.fetch_feed_entries(feed)
             except Exception as exc:
                 stats.failed_count += 1
                 print(f"  - fetch_failed: {exc}")
+                logger.exception("Feed failed (feed_id=%s name=%s).", feed.id, feed.name)
                 continue
 
             stats.fetched_entries += len(entries)
+            logger.info(
+                "Feed fetched (feed_id=%s name=%s entries=%s duration=%.2fs).",
+                feed.id,
+                feed.name,
+                len(entries),
+                perf_counter() - feed_started,
+            )
 
             for entry in entries:
                 try:
@@ -140,18 +158,35 @@ def main() -> None:
                 if filter_result.decision == CandidateDecision.SKIP:
                     stats.skipped_count += 1
                     print(f"  - skipped({filter_result.reason}): {article_data.title}")
+                    logger.info(
+                        "Candidate rejected (reason=%s feed_id=%s).",
+                        filter_result.reason,
+                        feed.id,
+                    )
                     continue
 
                 stats.candidate_count += 1
+                logger.info("Candidate accepted (feed_id=%s).", feed.id)
                 classification_input = _to_classification_input(feed, article)
 
                 try:
+                    classification_started = perf_counter()
                     classification = classification_provider.classify(
                         classification_input
+                    )
+                    logger.info(
+                        "Classification completed (feed_id=%s duration=%.2fs).",
+                        feed.id,
+                        perf_counter() - classification_started,
                     )
                 except Exception as exc:
                     stats.failed_count += 1
                     print(f"  - failed(classification): {exc}")
+                    logger.exception(
+                        "Failed to classify article (feed_id=%s article_url=%s).",
+                        feed.id,
+                        article_data.url,
+                    )
                     continue
 
                 stats.classified_count += 1
@@ -161,6 +196,11 @@ def main() -> None:
 
         print()
         _print_summary(stats)
+        logger.info("Articles fetched: %s", stats.fetched_entries)
+        logger.info("Articles after filtering: %s", stats.candidate_count)
+        logger.info("Articles classified: %s", stats.classified_count)
+        logger.info("Run completed. Duration: %.2fs", perf_counter() - run_started)
+        logger.info("==============================")
 
     logger.info("Evaluation completed.")
 
@@ -240,9 +280,6 @@ def _print_summary(stats: RunnerStats) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
+    configure_logging(level=logging.INFO)
 
     main()

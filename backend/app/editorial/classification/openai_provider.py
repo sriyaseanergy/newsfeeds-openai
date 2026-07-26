@@ -1,9 +1,9 @@
-import logging
 from dataclasses import dataclass
 
 from app.ai.openai.client import OpenAIClient
 from app.core.errors import ExternalServiceError
 from app.core.settings import Settings, get_settings
+from app.infrastructure.logging import get_logger
 from app.editorial.classification.models import (
     ClassificationInput,
     EditorialClassification,
@@ -11,7 +11,7 @@ from app.editorial.classification.models import (
 from app.editorial.classification.prompt_factory import PromptFactory
 from app.editorial.classification.provider import ClassificationProvider
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
