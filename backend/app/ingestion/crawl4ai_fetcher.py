@@ -1,22 +1,25 @@
 import asyncio
+import re
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 from app.catalog.feed.model import Feed
 from app.ingestion.acquisition import FeedAcquirer, FeedAcquisitionResult
 from app.ingestion.models import NormalizedArticleData
 from crawl4ai import AsyncWebCrawler
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class _AnchorParser(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.links: list[dict[str, str]] = []
+        self.links: list[dict[str, str | None]] = []
         self._active_href: str | None = None
         self._active_text_chunks: list[str] = []
+        self._active_attrs: dict[str, str] = {}
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.lower() != "a":
@@ -26,6 +29,12 @@ class _AnchorParser(HTMLParser):
         if isinstance(href, str) and href.strip():
             self._active_href = href.strip()
             self._active_text_chunks = []
+            self._active_attrs = {
+                "rel": str(attr_map.get("rel") or "").strip(),
+                "class_name": str(attr_map.get("class") or "").strip(),
+                "aria_label": str(attr_map.get("aria-label") or "").strip(),
+                "title": str(attr_map.get("title") or "").strip(),
+            }
 
     def handle_data(self, data: str) -> None:
         if self._active_href is not None:
@@ -35,16 +44,82 @@ class _AnchorParser(HTMLParser):
         if tag.lower() != "a" or self._active_href is None:
             return
         text = " ".join(chunk.strip() for chunk in self._active_text_chunks).strip()
-        self.links.append({"href": self._active_href, "text": text})
+        self.links.append(
+            {
+                "href": self._active_href,
+                "text": text,
+                "rel": self._active_attrs.get("rel"),
+                "class_name": self._active_attrs.get("class_name"),
+                "aria_label": self._active_attrs.get("aria_label"),
+                "title": self._active_attrs.get("title"),
+            }
+        )
         self._active_href = None
         self._active_text_chunks = []
+        self._active_attrs = {}
+
+
+class CrawlFetchConfig(BaseModel):
+    """
+    Crawl controls for acquisition. Keep this object as the extension point
+    for future crawl options (timeouts, domain allowlists, etc.).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    depth: int = Field(default=1, ge=1)
+
+    @classmethod
+    def from_feed(cls, feed: Feed) -> "CrawlFetchConfig":
+        return cls(depth=feed.crawl_depth or 1)
 
 
 class Crawl4AIFetcher(FeedAcquirer):
     def acquire(self, feed: Feed) -> FeedAcquisitionResult:
-        crawl_result = self._crawl(feed.url)
-        discovered_links = self._extract_links(feed.url, crawl_result)
+        config = CrawlFetchConfig.from_feed(feed)
+        discovered_links = self._discover_links(feed.url, config)
         return self._to_normalized_articles(feed, discovered_links)
+
+    def _discover_links(
+        self,
+        seed_url: str,
+        config: CrawlFetchConfig,
+    ) -> list[dict[str, str | datetime | None]]:
+        discovered_links: list[dict[str, str | datetime | None]] = []
+        frontier: list[str] = [seed_url]
+        visited_listing_pages: set[str] = set()
+
+        for _ in range(config.depth):
+            if not frontier:
+                break
+
+            next_frontier: list[str] = []
+            for page_url in frontier:
+                normalized_page_url = str(page_url).strip()
+                if (
+                    not normalized_page_url
+                    or normalized_page_url in visited_listing_pages
+                ):
+                    continue
+
+                visited_listing_pages.add(normalized_page_url)
+                crawl_result = self._crawl(normalized_page_url)
+                page_links = self._extract_links(normalized_page_url, crawl_result)
+                discovered_links.extend(page_links)
+
+                pagination_urls = self._extract_pagination_urls(
+                    seed_url=seed_url,
+                    current_page_url=normalized_page_url,
+                    crawl_result=crawl_result,
+                )
+                for candidate_url in pagination_urls:
+                    if candidate_url in visited_listing_pages:
+                        continue
+                    next_frontier.append(candidate_url)
+
+            frontier = self._dedupe_urls(next_frontier)
+
+        return self._dedupe_article_links(discovered_links)
 
     def _crawl(self, url: str) -> Any:
         return asyncio.run(self._crawl_async(url))
@@ -59,7 +134,51 @@ class Crawl4AIFetcher(FeedAcquirer):
         crawl_result: Any,
     ) -> list[dict[str, str | datetime | None]]:
         links: list[dict[str, str | datetime | None]] = []
+        candidates = self._extract_link_candidates(base_url, crawl_result)
 
+        for item in candidates:
+            url = str(item.get("url") or "").strip()
+            if not url:
+                continue
+            title = str(item.get("title") or item.get("text") or "").strip()
+            summary = str(item.get("description") or item.get("snippet") or "").strip()
+            published_at = self._parse_datetime(
+                item.get("published_at") or item.get("published") or item.get("date")
+            )
+            links.append(
+                {
+                    "url": url,
+                    "title": title or self._title_from_url(url),
+                    "summary": summary or None,
+                    "published_at": published_at,
+                }
+            )
+        return self._dedupe_article_links(links)
+
+    def _extract_pagination_urls(
+        self,
+        seed_url: str,
+        current_page_url: str,
+        crawl_result: Any,
+    ) -> list[str]:
+        candidates = self._extract_link_candidates(current_page_url, crawl_result)
+        pagination_urls: list[str] = []
+
+        for item in candidates:
+            candidate_url = str(item.get("url") or "").strip()
+            if not candidate_url:
+                continue
+            if not self._is_same_host(seed_url, candidate_url):
+                continue
+            if candidate_url == current_page_url:
+                continue
+            if self._looks_like_listing_page(item, current_page_url):
+                pagination_urls.append(candidate_url)
+
+        return self._dedupe_urls(pagination_urls)
+
+    def _extract_link_candidates(self, base_url: str, crawl_result: Any) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
         raw_links = getattr(crawl_result, "links", None)
         if isinstance(raw_links, dict):
             candidate_groups = raw_links.values()
@@ -77,22 +196,10 @@ class Crawl4AIFetcher(FeedAcquirer):
                 href = str(item.get("href") or "").strip()
                 if not href:
                     continue
-                title = str(item.get("title") or item.get("text") or "").strip()
-                summary = str(item.get("description") or item.get("snippet") or "").strip()
-                published_at = self._parse_datetime(
-                    item.get("published_at") or item.get("published") or item.get("date")
-                )
-                links.append(
-                    {
-                        "url": urljoin(base_url, href),
-                        "title": title or self._title_from_url(href),
-                        "summary": summary or None,
-                        "published_at": published_at,
-                    }
-                )
+                candidates.append({**item, "url": urljoin(base_url, href)})
 
-        if links:
-            return self._dedupe_article_links(links)
+        if candidates:
+            return candidates
 
         html = str(getattr(crawl_result, "html", "") or "")
         if not html:
@@ -101,18 +208,20 @@ class Crawl4AIFetcher(FeedAcquirer):
         parser = _AnchorParser()
         parser.feed(html)
         for item in parser.links:
-            href = item.get("href", "")
+            href = str(item.get("href") or "").strip()
             if not href:
                 continue
-            links.append(
+            candidates.append(
                 {
                     "url": urljoin(base_url, href),
-                    "title": item.get("text") or self._title_from_url(href),
-                    "summary": None,
-                    "published_at": None,
+                    "text": item.get("text"),
+                    "title": item.get("title"),
+                    "rel": item.get("rel"),
+                    "class_name": item.get("class_name"),
+                    "aria_label": item.get("aria_label"),
                 }
             )
-        return self._dedupe_article_links(links)
+        return candidates
 
     def _to_normalized_articles(
         self,
@@ -156,6 +265,71 @@ class Crawl4AIFetcher(FeedAcquirer):
             seen.add(url)
             deduped.append(item)
         return deduped
+
+    @staticmethod
+    def _dedupe_urls(urls: list[str]) -> list[str]:
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for url in urls:
+            normalized = str(url).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+        return deduped
+
+    @staticmethod
+    def _is_same_host(base_url: str, candidate_url: str) -> bool:
+        base = urlparse(base_url).netloc.lower()
+        candidate = urlparse(candidate_url).netloc.lower()
+        return bool(base and candidate and base == candidate)
+
+    def _looks_like_listing_page(
+        self,
+        item: dict[str, Any],
+        current_page_url: str,
+    ) -> bool:
+        candidate_url = str(item.get("url") or "").strip()
+        if not candidate_url:
+            return False
+
+        rel = str(item.get("rel") or "").lower()
+        class_name = str(item.get("class_name") or item.get("class") or "").lower()
+        text = str(item.get("text") or item.get("title") or "").strip().lower()
+        aria_label = str(item.get("aria_label") or "").strip().lower()
+
+        if any(token in rel for token in ("next", "prev", "pagination")):
+            return True
+        if "pagination" in class_name or "pager" in class_name:
+            return True
+        if any(token in aria_label for token in ("next", "previous", "page", "pagination")):
+            return True
+        if text in {"next", "previous", "prev", "older", "older posts", "newer", "newer posts"}:
+            return True
+        if re.fullmatch(r"\d{1,4}", text):
+            return True
+        if self._looks_like_pagination_url(candidate_url, current_page_url):
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_pagination_url(candidate_url: str, current_page_url: str) -> bool:
+        parsed = urlparse(candidate_url)
+        current = urlparse(current_page_url)
+
+        query = parse_qs(parsed.query)
+        pagination_keys = {"page", "paged", "p", "offset", "start", "cursor"}
+        if any(key in query for key in pagination_keys):
+            return True
+
+        path = parsed.path.lower()
+        if parsed.path == current.path and parsed.query == current.query:
+            return False
+        if re.search(r"/page/\d+/?$", path):
+            return True
+        if re.search(r"/p/\d+/?$", path):
+            return True
+        return False
 
     @staticmethod
     def _is_article_url(url: str) -> bool:
