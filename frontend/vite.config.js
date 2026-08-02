@@ -68,9 +68,13 @@ export default defineConfig(({ mode }) => {
       rewrite: (p) => p.replace(new RegExp(`^/${apiPrefix}`), "") || "/",
     };
   } else {
-    // No prefix — proxy individual API-shaped paths directly.
+    // No prefix — proxy individual API-shaped paths directly, stripping /api prefix when forwarding.
     for (const p of ["/api", "/authorize", "/callback", "/health"]) {
-      proxy[p] = { target: backendTarget, changeOrigin: true };
+      proxy[p] = {
+        target:       backendTarget,
+        changeOrigin: true,
+        rewrite: (path) => p === "/api" ? path.replace(/^\/api/, "") : path,
+      };
     }
   }
 

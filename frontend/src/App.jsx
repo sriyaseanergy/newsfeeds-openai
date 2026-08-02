@@ -22,12 +22,12 @@ const API_BASE = (() => {
 })()
 
 const API = {
-    articles:    `${API_BASE}/api/articles`,
-    emails:      `${API_BASE}/api/email/recipients`,
-    feeds:       `${API_BASE}/api/feeds`,
-    quadrants:   `${API_BASE}/api/quadrants`,
-    status:      `${API_BASE}/api/status`,
-    feedsHealth: `${API_BASE}/api/feeds/health`,
+    articles:          `${API_BASE}/api/articles`,
+    emails:            `${API_BASE}/api/email/recipients`,
+    feeds:             `${API_BASE}/api/feeds`,
+    technologyDomains: `${API_BASE}/api/technology-domains`,
+    status:            `${API_BASE}/api/status`,
+    feedsHealth:       `${API_BASE}/api/feeds/health`,
 }
 
 async function apiFetch(url, opts = {}) {
@@ -107,7 +107,7 @@ const FOOTER_HEIGHT = LAYOUT.footerHeight
 
 // ─── Category config ──────────────────────────────────────────────────────────
 
-const DEFAULT_QUADRANTS = ['Risks & Threats', 'Engineering', 'AI & Machine Learning', 'Expert Context']
+const DEFAULT_TECHNOLOGY_DOMAINS = ['AI', 'Expert Context']
 const DEV_BYPASS_SESSION = {
     name: 'Frontend Dev User',
     email: 'frontend.dev@local',
@@ -115,34 +115,35 @@ const DEV_BYPASS_SESSION = {
 }
 
 const CAT_DESC = {
-    'Risks & Threats':       'CVEs, advisories, exploits',
-    'AI & Machine Learning': 'Model releases, research, agents',
-    Engineering:             'Engineering updates and tooling',
-    'Expert Context':        'Analyst and industry context',
+    AI: 'Artificial Intelligence, LLMs, Generative AI, AI tooling',
+    'Expert Context': 'Expert opinions, deep technical analysis, and industry perspectives',
 }
 
 function catColor(cat) { return C[cat] || 'rgba(15,23,42,0.4)' }
 
-function normalizeQuadrant(name) {
-    return name === 'Frontier AI' ? 'AI & Machine Learning' : (name || 'Engineering')
+function normalizeTechnologyDomain(name) {
+    return name || 'AI'
 }
 
-function quadrantNames(quadrants) {
-    const names = (quadrants || []).map(q => q.name).filter(Boolean)
-    return names.length ? names : DEFAULT_QUADRANTS
+function technologyDomainNames(domains) {
+    const names = (domains || []).map(d => d.name).filter(Boolean)
+    return names.length ? names : DEFAULT_TECHNOLOGY_DOMAINS
 }
 
-function articleQuadrant(article) {
-    return normalizeQuadrant(article.category || article.quadrant || (article.type === 'Security' ? 'Risks & Threats' : 'Engineering'))
+function articleTechnologyDomain(article, feeds, domains) {
+    const feed = feeds.find(f => f.id === article.feed_id)
+    if (!feed) return 'AI'
+    const domain = domains.find(d => d.id === feed.technology_domain_id)
+    return domain ? domain.name : 'AI'
 }
 
-function catCount(articles, cat) {
+function catCount(articles, cat, feeds, domains) {
     if (!articles?.length) return 0
-    return articles.filter(a => articleQuadrant(a) === cat).length
+    return articles.filter(a => articleTechnologyDomain(a, feeds, domains) === cat).length
 }
 
-function filterArticles(articles, selectedCat, typeFilter) {
-    let base = (articles || []).filter(a => articleQuadrant(a) === selectedCat)
+function filterArticles(articles, selectedCat, typeFilter, feeds, domains) {
+    let base = (articles || []).filter(a => articleTechnologyDomain(a, feeds, domains) === selectedCat)
     if (typeFilter === 'Security')      base = base.filter(a => a.type === 'Security')
     else if (typeFilter === 'Dev')      base = base.filter(a => a.type === 'Dev')
     return base
@@ -216,13 +217,10 @@ function Toggle({ checked, onChange, disabled }) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
-function quadrantIcon(cat) {
+function technologyDomainIcon(cat) {
     const icons = {
-        'Risks & Threats':       IconSecurity,
-        'Engineering':             IconEngineering,
-        'AI & Machine Learning': IconPsychology,
-        'Expert Context':        IconLightbulb,
-        'Frontier AI':           IconPsychology,
+        AI: IconPsychology,
+        'Expert Context': IconLightbulb,
     }
     return icons[cat] || IconArticle
 }
@@ -249,8 +247,8 @@ function SidebarMenuItem(props) {
     )
 }
 
-function Sidebar({ articles, quadrants, selectedCat, onSelectCat, activeView, onView, collapsed }) {
-    const categories = quadrantNames(quadrants)
+function Sidebar({ articles, feeds, technologyDomains, selectedCat, onSelectCat, activeView, onView, collapsed }) {
+    const categories = technologyDomainNames(technologyDomains)
     const bottomItems = [
         { id: 'feedhealth', Icon: IconFeedHealth, label: 'Feed Health' },
         { id: 'settings',   Icon: IconSettings,   label: 'Settings'   },
@@ -262,8 +260,8 @@ function Sidebar({ articles, quadrants, selectedCat, onSelectCat, activeView, on
                 <ul className="fa-menu-list">
                     {categories.map(cat => {
                         const active = activeView === 'articles' && selectedCat === cat
-                        const count  = catCount(articles, cat)
-                        const Icon   = quadrantIcon(cat)
+                        const count  = catCount(articles, cat, feeds, technologyDomains)
+                        const Icon   = technologyDomainIcon(cat)
                         return (
                             <SidebarMenuItem
                                 key={cat}
@@ -524,8 +522,8 @@ function Topbar({ selectedCat, typeFilter, onTypeFilter, statusData }) {
 
 // ─── Article list ─────────────────────────────────────────────────────────────
 
-function ArticleList({ articles, selectedCat, typeFilter, loading }) {
-    const items = filterArticles(articles || [], selectedCat, typeFilter)
+function ArticleList({ articles, selectedCat, typeFilter, loading, feeds, technologyDomains }) {
+    const items = filterArticles(articles || [], selectedCat, typeFilter, feeds, technologyDomains)
 
     if (loading) {
         return (
@@ -551,14 +549,16 @@ function ArticleList({ articles, selectedCat, typeFilter, loading }) {
     return (
         <div style={{ flex: 1, overflowY: 'auto' }}>
             {items.slice(0, 80).map(a => {
-                const color  = catColor(a.category || '')
+                const categoryName = articleTechnologyDomain(a, feeds, technologyDomains)
+                const color  = catColor(categoryName || '')
                 const accBar = a.type === 'Security' ? C.red : color
-                const link   = a.link && String(a.link).trim()
+                const link   = a.url && String(a.url).trim()
                 const desc   = trunc(htmlToText(a.summary || ''), 200)
+                const sourceName = feeds.find(f => f.id === a.feed_id)?.name || ''
 
                 return (
                     <div
-                        key={a.unique_id || a.link || a.title}
+                        key={a.id || a.url || a.title}
                         onClick={() => link && window.open(link, '_blank', 'noopener')}
                         style={{
                             display: 'flex', cursor: link ? 'pointer' : 'default',
@@ -581,12 +581,12 @@ function ArticleList({ articles, selectedCat, typeFilter, loading }) {
                             {/* Source + time */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
                                 <span style={{ fontSize: 11, color: C.muted, fontWeight: 500 }}>
-                                    {trunc(a.source || '', 24)}
+                                    {trunc(sourceName || '', 24)}
                                 </span>
-                                {a.published_date && <>
+                                {a.published_at && <>
                                     <span style={{ fontSize: 9, color: C.faint }}>·</span>
                                     <span style={{ fontSize: 10, color: C.faint }}>
-                                        {relativeTime(a.published_date)}
+                                        {relativeTime(a.published_at)}
                                     </span>
                                 </>}
                             </div>
@@ -717,7 +717,7 @@ function Badge({ children, color }) {
 
 // ─── Settings: Add Feed Form ───────────────────────────────────────────────────
 
-const FETCH_KINDS = ['rss', 'smart_scrape', 'nvd_cve_api', 'github_global_advisories']
+const FETCH_KINDS = ['RSS']
 
 /** Who may add feeds and delete feeds (case-insensitive match on designation from Employee). */
 function canManageFeedSources(employee) {
@@ -725,9 +725,8 @@ function canManageFeedSources(employee) {
     return raw === 'super admin' || raw === 'delivery manager'
 }
 
-function AddFeedForm({ quadrants, onAdd, canManage }) {
-    const quadrantOptions = quadrantNames(quadrants)
-    const empty = () => ({ name: '', url: '', quadrant: quadrantOptions[0], fetch_kind: 'rss', priority: 5 })
+function AddFeedForm({ technologyDomains, onAdd, canManage }) {
+    const empty = () => ({ name: '', url: '', technology_domain_id: technologyDomains[0]?.id || '', fetch_kind: 'RSS', description: '' })
     const [form,    setForm]    = useState(empty)
     const [saving,  setSaving]  = useState(false)
     const [error,   setError]   = useState('')
@@ -736,21 +735,27 @@ function AddFeedForm({ quadrants, onAdd, canManage }) {
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
     useEffect(() => {
-        if (!quadrantOptions.includes(form.quadrant)) {
-            setForm(f => ({ ...f, quadrant: quadrantOptions[0] }))
+        const ids = technologyDomains.map(d => d.id)
+        if (technologyDomains.length > 0 && !ids.includes(form.technology_domain_id)) {
+            setForm(f => ({ ...f, technology_domain_id: technologyDomains[0].id }))
         }
-    }, [form.quadrant, quadrants])
+    }, [form.technology_domain_id, technologyDomains])
 
     const handleSubmit = async () => {
         if (!form.name.trim()) { setError('Name is required'); return }
         if (!form.url.trim())  { setError('URL is required');  return }
-        const p = parseInt(form.priority, 10)
-        if (isNaN(p) || p < 1 || p > 10) { setError('Priority must be 1–10'); return }
+        if (!form.technology_domain_id) { setError('Technology Domain is required'); return }
         setError(''); setSaving(true)
         try {
             await apiFetch(API.feeds, {
                 method: 'POST',
-                body: JSON.stringify({ ...form, url: form.url.trim(), name: form.name.trim(), priority: p }),
+                body: JSON.stringify({
+                    name: form.name.trim(),
+                    url: form.url.trim(),
+                    technology_domain_id: form.technology_domain_id,
+                    fetch_kind: form.fetch_kind,
+                    description: form.description.trim() || null
+                }),
             })
             setForm(empty())
             setOpen(false)
@@ -789,27 +794,31 @@ function AddFeedForm({ quadrants, onAdd, canManage }) {
                             <input value={form.url} onChange={e => set('url', e.target.value)} placeholder="https://…/feed.xml" style={inputStyle} />
                         </div>
                         <div>
-                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Quadrant</div>
-                            <select value={form.quadrant} onChange={e => set('quadrant', e.target.value)} style={selectStyle}>
-                                {quadrantOptions.map(q => <option key={q} value={q}>{q}</option>)}
+                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Technology Domain</div>
+                            <select value={form.technology_domain_id} onChange={e => set('technology_domain_id', e.target.value)} style={selectStyle}>
+                                {technologyDomains.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                             </select>
                         </div>
                         <div>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Fetch Kind</div>
                             <select value={form.fetch_kind} onChange={e => set('fetch_kind', e.target.value)} style={selectStyle}>
-                                {FETCH_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+                                {FETCH_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
                             </select>
                         </div>
-                        <div>
-                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Priority (1–10)</div>
-                            <input type="number" min={1} max={10} value={form.priority}
-                                onChange={e => set('priority', e.target.value)} style={inputStyle} />
+                        <div style={{ gridColumn: '1 / span 2' }}>
+                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Description (optional)</div>
+                            <input
+                                value={form.description}
+                                onChange={e => set('description', e.target.value)}
+                                placeholder="Short feed description"
+                                style={inputStyle}
+                            />
                         </div>
                     </div>
                     {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{error}</div>}
-                    <div style={{ display: 'flex', gap: 6 }}>
-                        <Btn variant="primary" onClick={handleSubmit} loading={saving}>Save Feed</Btn>
-                        <Btn variant="ghost" onClick={() => { setOpen(false); setError(''); setForm(empty()) }}>Cancel</Btn>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <Btn onClick={() => { setOpen(false); setError('') }} disabled={saving}>Cancel</Btn>
+                        <Btn variant="primary" onClick={handleSubmit} loading={saving}>Create Feed</Btn>
                     </div>
                 </div>
             )}
@@ -817,27 +826,22 @@ function AddFeedForm({ quadrants, onAdd, canManage }) {
     )
 }
 
-// ─── Settings: Feed Manager table ─────────────────────────────────────────────
-
-const QUADRANT_COLORS = {
-    'Risks & Threats':       '#f87171',
-    Engineering:             '#2563eb',
-    'AI & Machine Learning': '#a78bfa',
-    'Expert Context':        '#fb923c',
-    'Frontier AI':           '#a78bfa',
+const TECHNOLOGY_DOMAIN_COLORS = {
+    AI: '#a78bfa',
+    'Expert Context': '#fb923c',
 }
 
-function FeedManager({ feeds, quadrants, onFeedsChange, canManage }) {
+function FeedManager({ feeds, technologyDomains, onFeedsChange, canManage }) {
     const [toggling,  setToggling]  = useState(null)
     const [deleting,  setDeleting]  = useState(null)
-    const orderedQuadrants = quadrantNames(quadrants)
+    const orderedTechnologyDomains = technologyDomainNames(technologyDomains)
 
     const handleToggle = async (feed) => {
         setToggling(feed.id)
         try {
             await apiFetch(`${API.feeds}/${feed.id}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ is_active: !feed.is_active }),
+                method: 'PUT',
+                body: JSON.stringify({ is_enabled: !feed.is_enabled }),
             })
             onFeedsChange()
         } catch (e) { console.error(e) }
@@ -862,17 +866,20 @@ function FeedManager({ feeds, quadrants, onFeedsChange, canManage }) {
         )
     }
 
-    const grouped = orderedQuadrants.reduce((acc, q) => {
-        acc[q] = feeds.filter(f => normalizeQuadrant(f.quadrant) === q)
+    const grouped = orderedTechnologyDomains.reduce((acc, q) => {
+        acc[q] = feeds.filter(f => {
+            const domain = technologyDomains.find(d => d.id === f.technology_domain_id)
+            return normalizeTechnologyDomain(domain ? domain.name : '') === q
+        })
         return acc
     }, {})
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {orderedQuadrants.map(q => {
+            {orderedTechnologyDomains.map(q => {
                 const group = grouped[q]
                 if (!group.length) return null
-                const color = QUADRANT_COLORS[q] || C.muted
+                const color = TECHNOLOGY_DOMAIN_COLORS[q] || C.muted
                 return (
                     <div key={q}>
                         <div style={{
@@ -890,16 +897,10 @@ function FeedManager({ feeds, quadrants, onFeedsChange, canManage }) {
                                     display: 'flex', alignItems: 'center', gap: 10,
                                     padding: '8px 12px', borderRadius: 6,
                                     background: C.panelBg,
-                                    border: `0.5px solid ${feed.is_active ? C.border : 'var(--feed-inactive-border)'}`,
-                                    opacity: feed.is_active ? 1 : 0.45,
+                                    border: `0.5px solid ${feed.is_enabled ? C.border : 'var(--feed-inactive-border)'}`,
+                                    opacity: feed.is_enabled ? 1 : 0.45,
                                     transition: 'opacity 200ms ease',
                                 }}>
-                                    {/* Priority dot */}
-                                    <div style={{
-                                        width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                                        background: feed.priority >= 9 ? C.red : feed.priority >= 7 ? C.amber : C.muted,
-                                    }} title={`Priority ${feed.priority}`} />
-
                                     {/* Name + URL */}
                                     <div style={{ flex: 1, minWidth: 0 }}>
                                         <div style={{
@@ -915,14 +916,9 @@ function FeedManager({ feeds, quadrants, onFeedsChange, canManage }) {
                                     {/* Fetch kind badge */}
                                     <Badge color={C.muted}>{feed.fetch_kind}</Badge>
 
-                                    {/* Priority */}
-                                    <span style={{ fontSize: 10, color: C.muted, fontFamily: 'monospace', width: 14, textAlign: 'right', flexShrink: 0 }}>
-                                        {feed.priority}
-                                    </span>
-
                                     {/* Active toggle */}
                                     <Toggle
-                                        checked={!!feed.is_active}
+                                        checked={!!feed.is_enabled}
                                         onChange={() => handleToggle(feed)}
                                         disabled={toggling === feed.id}
                                     />
@@ -953,7 +949,7 @@ function FeedManager({ feeds, quadrants, onFeedsChange, canManage }) {
     )
 }
 
-function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, canManageFeeds }) {
+function ManageTechnologyDomains({ technologyDomains, feeds, onTechnologyDomainsChange, onFeedsChange, canManageFeeds }) {
     const [name, setName] = useState('')
     const [saving, setSaving] = useState(false)
     const [deleting, setDeleting] = useState(null)
@@ -964,38 +960,38 @@ function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, c
         if (!trimmed) { setError('Name is required'); return }
         setError(''); setSaving(true)
         try {
-            await apiFetch(API.quadrants, {
+            await apiFetch(API.technologyDomains, {
                 method: 'POST',
                 body: JSON.stringify({ name: trimmed }),
             })
             setName('')
-            onQuadrantsChange()
+            onTechnologyDomainsChange()
         } catch (e) {
-            setError(e.message.includes('409') ? 'A quadrant with this name already exists' : `Error: ${e.message}`)
+            setError(e.message.includes('409') ? 'A technology domain with this name already exists' : `Error: ${e.message}`)
         } finally { setSaving(false) }
     }
 
-    const handleDelete = async quadrant => {
-        const inUse = feeds.some(f => normalizeQuadrant(f.quadrant) === quadrant.name)
-        if (inUse) { setError('Move or delete feeds assigned to this quadrant first'); return }
-        if (!confirm(`Delete "${quadrant.name}"?`)) return
-        setError(''); setDeleting(quadrant.id)
+    const handleDelete = async domain => {
+        const inUse = feeds.some(f => f.technology_domain_id === domain.id)
+        if (inUse) { setError('Move or delete feeds assigned to this technology domain first'); return }
+        if (!confirm(`Delete "${domain.name}"?`)) return
+        setError(''); setDeleting(domain.id)
         try {
-            const r = await fetch(`${API.quadrants}/${quadrant.id}`, { method: 'DELETE' })
+            const r = await fetch(`${API.technologyDomains}/${domain.id}`, { method: 'DELETE' })
             if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
-            onQuadrantsChange()
+            onTechnologyDomainsChange()
             onFeedsChange()
         } catch (e) {
-            setError(e.message.includes('409') ? 'Move or delete feeds assigned to this quadrant first' : `Error: ${e.message}`)
+            setError(e.message.includes('409') ? 'Move or delete feeds assigned to this technology domain first' : `Error: ${e.message}`)
         } finally { setDeleting(null) }
     }
 
     return (
         <div style={{ marginBottom: 32 }}>
-            <SectionTitle>Manage Quadrants</SectionTitle>
+            <SectionTitle>Manage Technology Domains</SectionTitle>
             {!canManageFeeds && (
                 <div style={{ fontSize: 10, color: C.faint, marginBottom: 10, lineHeight: 1.45 }}>
-                    Adding or removing quadrants is limited to Super Admin or Delivery Manager.
+                    Adding or removing technology domains is limited to Super Admin or Delivery Manager.
                 </div>
             )}
             {canManageFeeds && (
@@ -1004,7 +1000,7 @@ function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, c
                         value={name}
                         onChange={e => { setName(e.target.value); setError('') }}
                         onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                        placeholder="New quadrant name"
+                        placeholder="New technology domain name"
                         style={{
                             flex: 1, background: C.panelBg,
                             border: `0.5px solid ${error ? C.red : C.border}`,
@@ -1017,9 +1013,9 @@ function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, c
             )}
             {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{error}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {quadrants.map(q => {
-                    const count = feeds.filter(f => normalizeQuadrant(f.quadrant) === q.name).length
-                    const color = QUADRANT_COLORS[q.name] || catColor(q.name)
+                {technologyDomains.map(q => {
+                    const count = feeds.filter(f => f.technology_domain_id === q.id).length
+                    const color = TECHNOLOGY_DOMAIN_COLORS[q.name] || catColor(q.name)
                     return (
                         <div key={q.id || q.name} style={{
                             display: 'flex', alignItems: 'center', gap: 10,
@@ -1033,7 +1029,7 @@ function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, c
                                 <button
                                     onClick={() => handleDelete(q)}
                                     disabled={deleting === q.id || count > 0}
-                                    title={count > 0 ? 'Remove assigned feeds before deleting' : 'Delete quadrant'}
+                                    title={count > 0 ? 'Remove assigned feeds before deleting' : 'Delete technology domain'}
                                     style={{
                                         background: 'none', border: 'none',
                                         cursor: count > 0 ? 'not-allowed' : 'pointer',
@@ -1056,7 +1052,7 @@ function ManageQuadrants({ quadrants, feeds, onQuadrantsChange, onFeedsChange, c
 
 // ─── Settings view ────────────────────────────────────────────────────────────
 
-function SettingsView({ feeds, quadrants, onFeedsChange, onQuadrantsChange, recipients, onUpdateRecipients, sessionEmployee }) {
+function SettingsView({ feeds, technologyDomains, onFeedsChange, onTechnologyDomainsChange, recipients, onUpdateRecipients, sessionEmployee }) {
     const canManageFeeds = canManageFeedSources(sessionEmployee)
     const [input,    setInput]    = useState('')
     const [adding,   setAdding]   = useState(false)
@@ -1066,32 +1062,19 @@ function SettingsView({ feeds, quadrants, onFeedsChange, onQuadrantsChange, reci
     const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
 
     const handleAddRecipient = async () => {
-        const email = input.trim()
-        if (!validEmail(email)) { setRecError('Invalid email address'); return }
-        setRecError(''); setAdding(true)
-        try {
-            const data = await apiFetch(API.emails, { method: 'POST', body: JSON.stringify({ email }) })
-            onUpdateRecipients(data.recipients || [])
-            setInput('')
-        } catch { setRecError('Failed to add recipient') }
-        finally { setAdding(false) }
+        // Disabled for now as backend feature is planned
     }
 
     const handleRemoveRecipient = async email => {
-        setRemoving(email)
-        try {
-            const data = await apiFetch(API.emails, { method: 'DELETE', body: JSON.stringify({ email }) })
-            onUpdateRecipients(data.recipients || [])
-        } catch (e) { console.error(e) }
-        finally { setRemoving(null) }
+        // Disabled for now as backend feature is planned
     }
 
     return (
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-            <ManageQuadrants
-                quadrants={quadrants}
+            <ManageTechnologyDomains
+                technologyDomains={technologyDomains}
                 feeds={feeds}
-                onQuadrantsChange={onQuadrantsChange}
+                onTechnologyDomainsChange={onTechnologyDomainsChange}
                 onFeedsChange={onFeedsChange}
                 canManageFeeds={canManageFeeds}
             />
@@ -1100,7 +1083,7 @@ function SettingsView({ feeds, quadrants, onFeedsChange, onQuadrantsChange, reci
             <SectionTitle>Feed Sources</SectionTitle>
             <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>
                 {feeds.length} feed{feeds.length !== 1 ? 's' : ''} configured ·
-                {' '}{feeds.filter(f => f.is_active).length} active
+                {' '}{feeds.filter(f => f.is_enabled).length} active
             </div>
             {!canManageFeeds && (
                 <div style={{ fontSize: 10, color: C.faint, marginBottom: 12, lineHeight: 1.45 }}>
@@ -1108,60 +1091,40 @@ function SettingsView({ feeds, quadrants, onFeedsChange, onQuadrantsChange, reci
                 </div>
             )}
 
-            <AddFeedForm quadrants={quadrants} onAdd={onFeedsChange} canManage={canManageFeeds} />
+            <AddFeedForm technologyDomains={technologyDomains} onAdd={onFeedsChange} canManage={canManageFeeds} />
 
             <div style={{ marginBottom: 32 }}>
-                <FeedManager feeds={feeds} quadrants={quadrants} onFeedsChange={onFeedsChange} canManage={canManageFeeds} />
+                <FeedManager feeds={feeds} technologyDomains={technologyDomains} onFeedsChange={onFeedsChange} canManage={canManageFeeds} />
             </div>
 
             {/* ── Email Recipients ─────────────────────────────────────────── */}
-            <SectionTitle>Email Recipients</SectionTitle>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
-                {recipients.length} address{recipients.length !== 1 ? 'es' : ''} configured
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                    value={input}
-                    onChange={e => { setInput(e.target.value); setRecError('') }}
-                    onKeyDown={e => e.key === 'Enter' && handleAddRecipient()}
-                    placeholder="name@company.com"
-                    style={{
-                        flex: 1, background: C.panelBg,
-                        border: `0.5px solid ${recError ? C.red : C.border}`,
-                        borderRadius: 6, padding: '7px 11px', color: C.text,
-                        fontFamily: 'inherit', fontSize: 12, outline: 'none',
-                    }}
-                />
-                <Btn onClick={handleAddRecipient} variant="primary" loading={adding}>Add</Btn>
-            </div>
-            {recError && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{recError}</div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {recipients.length === 0 && (
+            <div style={{ opacity: 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <SectionTitle>Email Recipients</SectionTitle>
+                    <Badge color={C.amber}>Coming Soon</Badge>
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
+                    Recipient list management will be re-enabled when backend support is added.
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <input
+                        disabled
+                        value={input}
+                        placeholder="name@company.com"
+                        style={{
+                            flex: 1, background: C.panelBg,
+                            border: `0.5px solid ${C.border}`,
+                            borderRadius: 6, padding: '7px 11px', color: C.text,
+                            fontFamily: 'inherit', fontSize: 12, outline: 'none',
+                        }}
+                    />
+                    <Btn disabled variant="primary">Add</Btn>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 12, color: C.muted }}>
                         No recipients configured
                     </div>
-                )}
-                {recipients.map(email => (
-                    <div key={email} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        background: C.panelBg, border: `0.5px solid ${C.border}`,
-                        borderRadius: 6, padding: '7px 11px',
-                    }}>
-                        <span style={{
-                            fontSize: 12, color: C.muted,
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%',
-                        }}>{email}</span>
-                        <button
-                            onClick={() => handleRemoveRecipient(email)}
-                            disabled={removing === email}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted, fontSize: 16, lineHeight: 1, padding: '0 2px', transition: 'color 150ms' }}
-                            onMouseEnter={e => e.currentTarget.style.color = C.red}
-                            onMouseLeave={e => e.currentTarget.style.color = C.muted}
-                        >
-                            {removing === email ? <Spinner size={10} /> : '×'}
-                        </button>
-                    </div>
-                ))}
+                </div>
             </div>
         </div>
     )
@@ -1215,13 +1178,11 @@ function RightPanel({ statusData, feedHealth, recipients, apiError, fetched, onC
             </div>
 
             {/* System Status */}
-            <div style={{ padding: '0 12px 14px', borderBottom: `0.5px solid ${C.border}` }}>
-                <SectionTitle>System Status</SectionTitle>
-
-                {!fetched && <div style={{ color: C.muted }}>Loading…</div>}
-                {fetched && apiError && !statusData && (
-                    <div style={{ color: C.amber }}>API unreachable</div>
-                )}
+            <div style={{ padding: '0 12px 14px', borderBottom: `0.5px solid ${C.border}`, opacity: 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <SectionTitle>System Status</SectionTitle>
+                    <Badge color={C.amber}>Coming Soon</Badge>
+                </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     {statusRows.map(({ label, value, color }) => (
@@ -1231,86 +1192,29 @@ function RightPanel({ statusData, feedHealth, recipients, apiError, fetched, onC
                         </div>
                     ))}
                 </div>
-
-                {/* Feeds healthy progress bar */}
-                {feeds && (
-                    <div style={{ marginTop: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                            <span style={{ color: C.muted }}>Feeds healthy</span>
-                            <span style={{ color: feedOk ? C.green : C.amber, fontWeight: 600 }}>
-                                {healthy}/{total}
-                            </span>
-                        </div>
-                        <div style={{ height: 3, background: C.faint, borderRadius: 2 }}>
-                            <div style={{
-                                height: '100%', borderRadius: 2,
-                                background: feedOk ? C.green : C.amber,
-                                width: `${pct}%`,
-                                transition: 'width 400ms ease',
-                            }} />
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Recipients */}
-            {recipients.length > 0 && (
-                <div style={{ padding: '12px', borderBottom: `0.5px solid ${C.border}` }}>
+            <div style={{ padding: '12px', borderBottom: `0.5px solid ${C.border}`, opacity: 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <SectionTitle>Recipients</SectionTitle>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {recipients.slice(0, 5).map(email => (
-                            <div key={email} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                <div style={{
-                                    width: 22, height: 22, borderRadius: '50%',
-                                    background: 'rgba(79,95,255,0.2)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: 8, fontWeight: 700, color: C.accentText,
-                                    letterSpacing: '0.03em', flexShrink: 0,
-                                }}>
-                                    {email.slice(0, 2).toUpperCase()}
-                                </div>
-                                <span style={{
-                                    fontSize: 10, color: C.muted,
-                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                }}>{trunc(email, 18)}</span>
-                            </div>
-                        ))}
-                        {recipients.length > 5 && (
-                            <span style={{ fontSize: 10, color: C.faint }}>
-                                +{recipients.length - 5} more
-                            </span>
-                        )}
-                    </div>
+                    <Badge color={C.amber}>Coming Soon</Badge>
                 </div>
-            )}
+                <div style={{ fontSize: 10, color: C.muted }}>
+                    Email recipients will appear here once backend support is completed.
+                </div>
+            </div>
 
             {/* Feed Health mini-list */}
-            {miniFeeds.length > 0 && (
-                <div style={{ padding: '12px' }}>
+            <div style={{ padding: '12px', opacity: 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <SectionTitle>Feed Health</SectionTitle>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {miniFeeds.map(f => {
-                            const isDisabled = f.disabled
-                            const isFailing  = !isDisabled && f.consecutive_failures > 0
-                            const isHealthy  = !isDisabled && !isFailing && f.last_success
-                            const dot        = isDisabled ? C.red : isFailing ? C.amber : isHealthy ? C.green : C.muted
-                            const is404      = f.last_error?.includes('404')
-                            return (
-                                <div key={f.url} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <Dot color={dot} size={5} />
-                                    <span style={{
-                                        flex: 1, fontSize: 10, color: C.muted,
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                    }}>{trunc(f.name, 17)}</span>
-                                    {is404 && <Badge color={C.red}>404</Badge>}
-                                    {isFailing && !is404 && <Badge color={C.amber}>{f.consecutive_failures}×</Badge>}
-                                    {isDisabled && <Badge color={C.red}>OFF</Badge>}
-                                </div>
-                            )
-                        })}
-                    </div>
+                    <Badge color={C.amber}>Coming Soon</Badge>
                 </div>
-            )}
+                <div style={{ fontSize: 10, color: C.muted }}>
+                    Feed ingestion health stats will appear here.
+                </div>
+            </div>
         </aside>
     )
 }
@@ -1322,7 +1226,7 @@ export default function App() {
     const [sessionEmployee] = useState(() => DEV_BYPASS_SESSION)
     const [statusData,    setStatusData]    = useState(null)
     const [feeds,         setFeeds]         = useState([])
-    const [quadrants,     setQuadrants]     = useState([])
+    const [technologyDomains, setTechnologyDomains] = useState([])
     const [recipients,    setRecipients]    = useState([])
     const [articles,      setArticles]      = useState([])
     const [feedHealth,    setFeedHealth]    = useState([])
@@ -1330,7 +1234,7 @@ export default function App() {
     const [healthLoading, setHealthLoading] = useState(false)
     const [apiError,      setApiError]      = useState(null)
     const [fetched,       setFetched]       = useState(false)
-    const [selectedCat,   setSelectedCat]   = useState(DEFAULT_QUADRANTS[0])
+    const [selectedCat,   setSelectedCat]   = useState(DEFAULT_TECHNOLOGY_DOMAINS[0])
     const [typeFilter,    setTypeFilter]    = useState('All')
     const [activeView,    setActiveView]    = useState('articles')
     const [drawerCollapsed, setDrawerCollapsed] = useState(false)
@@ -1400,14 +1304,17 @@ export default function App() {
     const handleLogout = useCallback(() => {}, [])
 
     const fetchStatus = useCallback(async () => {
-        try { setStatusData(await apiFetch(API.status)); setApiError(null) }
-        catch (e) { setApiError(`${e.message}`) }
-        finally { setFetched(true) }
-    }, [])
+        // Suspend API call until backend status logging is implemented
+        setStatusData({
+            articles: { total: articles.length, pending_security_notification: 0 },
+            feeds: { healthy: feeds.filter(f => f.is_enabled).length, total: feeds.length, disabled: feeds.filter(f => !f.is_enabled).length }
+        })
+        setFetched(true)
+    }, [articles.length, feeds])
 
     const fetchRecipients = useCallback(async () => {
-        try { const d = await apiFetch(API.emails); setRecipients(d.recipients || []) }
-        catch (e) { console.error(e) }
+        // Suspend API call until backend recipients table is implemented
+        setRecipients([])
     }, [])
 
     const fetchFeeds = useCallback(async () => {
@@ -1415,9 +1322,9 @@ export default function App() {
         catch (e) { console.error(e) }
     }, [])
 
-    const fetchQuadrants = useCallback(async () => {
-        try { const d = await apiFetch(API.quadrants); setQuadrants(Array.isArray(d) ? d : []) }
-        catch (e) { console.error(e); setQuadrants(DEFAULT_QUADRANTS.map((name, idx) => ({ id: idx + 1, name, display_order: idx + 1 }))) }
+    const fetchTechnologyDomains = useCallback(async () => {
+        try { const d = await apiFetch(API.technologyDomains); setTechnologyDomains(Array.isArray(d) ? d : []) }
+        catch (e) { console.error(e); setTechnologyDomains(DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))) }
     }, [])
 
     const fetchArticles = useCallback(async () => {
@@ -1428,28 +1335,26 @@ export default function App() {
     }, [])
 
     const fetchFeedHealth = useCallback(async () => {
-        setHealthLoading(true)
-        try { setFeedHealth(await apiFetch(API.feedsHealth)) }
-        catch (e) { console.error(e) }
-        finally { setHealthLoading(false) }
+        // Suspend API call until backend health reporting is implemented
+        setFeedHealth([])
     }, [])
 
     useEffect(() => {
         if (!sessionEmployee) return
-        fetchStatus(); fetchRecipients(); fetchArticles(); fetchFeedHealth(); fetchQuadrants()
+        fetchStatus(); fetchRecipients(); fetchArticles(); fetchFeedHealth(); fetchTechnologyDomains()
         const t = setInterval(fetchStatus, 30_000)
         return () => clearInterval(t)
-    }, [sessionEmployee, fetchStatus, fetchRecipients, fetchArticles, fetchFeedHealth, fetchQuadrants])
+    }, [sessionEmployee, fetchStatus, fetchRecipients, fetchArticles, fetchFeedHealth, fetchTechnologyDomains])
 
     useEffect(() => {
-        const available = quadrantNames(quadrants)
+        const available = technologyDomainNames(technologyDomains)
         if (!available.includes(selectedCat)) setSelectedCat(available[0])
-    }, [quadrants, selectedCat])
+    }, [technologyDomains, selectedCat])
 
     const handleView = view => {
         setActiveView(view)
         if (view === 'feedhealth') fetchFeedHealth()
-        if (view === 'settings')  { fetchFeeds(); fetchQuadrants(); fetchRecipients() }
+        if (view === 'settings')  { fetchFeeds(); fetchTechnologyDomains(); fetchRecipients() }
     }
 
     // if (!sessionEmployee) {
@@ -1482,7 +1387,8 @@ export default function App() {
             <div className="fa-body-row">
                 <Sidebar
                     articles={articles}
-                    quadrants={quadrants}
+                    feeds={feeds}
+                    technologyDomains={technologyDomains}
                     selectedCat={selectedCat}
                     onSelectCat={setSelectedCat}
                     activeView={activeView}
@@ -1503,6 +1409,8 @@ export default function App() {
                                 />
                                 <ArticleList
                                     articles={articles}
+                                    feeds={feeds}
+                                    technologyDomains={technologyDomains}
                                     selectedCat={selectedCat}
                                     typeFilter={typeFilter}
                                     loading={artLoading}
@@ -1521,9 +1429,9 @@ export default function App() {
                         {activeView === 'settings' && (
                             <SettingsView
                                 feeds={feeds}
-                                quadrants={quadrants}
+                                technologyDomains={technologyDomains}
                                 onFeedsChange={fetchFeeds}
-                                onQuadrantsChange={fetchQuadrants}
+                                onTechnologyDomainsChange={fetchTechnologyDomains}
                                 recipients={recipients}
                                 onUpdateRecipients={setRecipients}
                                 sessionEmployee={sessionEmployee}
