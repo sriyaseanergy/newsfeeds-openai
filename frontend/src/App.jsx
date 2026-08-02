@@ -736,7 +736,7 @@ function Badge({ children, color }) {
 
 // ─── Settings: Add Feed Form ───────────────────────────────────────────────────
 
-const FETCH_KINDS = ['RSS']
+const FETCH_KINDS = ['RSS', 'CRAWL']
 
 /** Who may add feeds and delete feeds (case-insensitive match on designation from Employee). */
 function canManageFeedSources(employee) {
@@ -745,7 +745,14 @@ function canManageFeedSources(employee) {
 }
 
 function AddFeedForm({ technologyDomains, onAdd, canManage }) {
-    const empty = () => ({ name: '', url: '', technology_domain_id: technologyDomains[0]?.id || '', fetch_kind: 'RSS', description: '' })
+    const empty = () => ({
+        name: '',
+        url: '',
+        technology_domain_id: technologyDomains[0]?.id || '',
+        fetch_kind: 'RSS',
+        crawl_depth: 1,
+        description: '',
+    })
     const [form,    setForm]    = useState(empty)
     const [saving,  setSaving]  = useState(false)
     const [error,   setError]   = useState('')
@@ -764,6 +771,13 @@ function AddFeedForm({ technologyDomains, onAdd, canManage }) {
         if (!form.name.trim()) { setError('Name is required'); return }
         if (!form.url.trim())  { setError('URL is required');  return }
         if (!form.technology_domain_id) { setError('Technology Domain is required'); return }
+        if (form.fetch_kind === 'CRAWL') {
+            const depth = Number(form.crawl_depth)
+            if (!Number.isInteger(depth) || depth < 1) {
+                setError('Crawl depth must be at least 1')
+                return
+            }
+        }
         setError(''); setSaving(true)
         try {
             await apiFetch(API.feeds, {
@@ -773,6 +787,7 @@ function AddFeedForm({ technologyDomains, onAdd, canManage }) {
                     url: form.url.trim(),
                     technology_domain_id: form.technology_domain_id,
                     fetch_kind: form.fetch_kind,
+                    crawl_depth: form.fetch_kind === 'CRAWL' ? Number(form.crawl_depth) : null,
                     description: form.description.trim() || null
                 }),
             })
@@ -820,10 +835,36 @@ function AddFeedForm({ technologyDomains, onAdd, canManage }) {
                         </div>
                         <div>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Fetch Kind</div>
-                            <select value={form.fetch_kind} onChange={e => set('fetch_kind', e.target.value)} style={selectStyle}>
+                            <select
+                                value={form.fetch_kind}
+                                onChange={e => {
+                                    const nextKind = e.target.value
+                                    setForm(prev => ({
+                                        ...prev,
+                                        fetch_kind: nextKind,
+                                        crawl_depth: nextKind === 'CRAWL' ? (prev.crawl_depth || 1) : 1,
+                                    }))
+                                }}
+                                style={selectStyle}
+                            >
                                 {FETCH_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
                             </select>
                         </div>
+                        {form.fetch_kind === 'CRAWL' && (
+                            <div>
+                                <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Crawl Depth</div>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={form.crawl_depth}
+                                    onChange={e => {
+                                        const raw = e.target.value
+                                        set('crawl_depth', raw === '' ? '' : Number(raw))
+                                    }}
+                                    style={inputStyle}
+                                />
+                            </div>
+                        )}
                         <div style={{ gridColumn: '1 / span 2' }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>Description (optional)</div>
                             <input
@@ -860,7 +901,11 @@ function FeedManager({ feeds, technologyDomains, onFeedsChange, canManage }) {
         try {
             await apiFetch(`${API.feeds}/${feed.id}`, {
                 method: 'PUT',
-                body: JSON.stringify({ is_enabled: !feed.is_enabled }),
+                body: JSON.stringify({
+                    is_enabled: !feed.is_enabled,
+                    fetch_kind: feed.fetch_kind,
+                    crawl_depth: feed.fetch_kind === 'CRAWL' ? (feed.crawl_depth || 1) : null,
+                }),
             })
             onFeedsChange()
         } catch (e) { console.error(e) }
@@ -933,7 +978,10 @@ function FeedManager({ feeds, technologyDomains, onFeedsChange, canManage }) {
                                     </div>
 
                                     {/* Fetch kind badge */}
-                                    <Badge color={C.muted}>{feed.fetch_kind}</Badge>
+                                    <Badge color={C.muted}>
+                                        {feed.fetch_kind}
+                                        {feed.fetch_kind === 'CRAWL' ? ` · d${feed.crawl_depth || 1}` : ''}
+                                    </Badge>
 
                                     {/* Active toggle */}
                                     <Toggle
