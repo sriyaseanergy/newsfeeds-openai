@@ -1,15 +1,11 @@
 """
-Developer evaluation runner.
+Developer-only editorial evaluation runner.
 
-This runner is intended for local development only.
-
-Responsibilities:
-- Load a limited number of feeds
-- Fetch articles
-- Execute the editorial pipeline
-- Print readable results
-
-This is NOT part of the production application.
+This runner is intended for local development only and does not:
+- persist data
+- read article rows from the database
+- send emails
+- alter production execution paths
 """
 
 from __future__ import annotations
@@ -19,200 +15,333 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from time import perf_counter
-from uuid import UUID
 
+from app.ai.openai.client import OpenAIClient
 from app.catalog.article.model import Article
 from app.catalog.feed.model import Feed
 from app.catalog.feed.repository import FeedRepository
+from app.core.settings import get_settings
 from app.editorial.candidate_filter.enums import CandidateDecision
 from app.editorial.candidate_filter.service import CandidateFilterService
-from app.editorial.classification.models import (
-    ClassificationInput,
-    EditorialClassification,
-)
+from app.editorial.classification.models import ClassificationInput, EditorialClassification
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
-from app.infrastructure.logging import configure_logging, get_logger
 from app.infrastructure.database.session import SessionLocal
-from app.ingestion.mapper import ArticleMapper
+from app.infrastructure.logging import configure_logging, get_logger
+from app.ingestion.acquisition_factory import AcquisitionFactory
 from app.ingestion.models import NormalizedArticleData
-from app.ingestion.rss_client import RSSClient
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = get_logger(__name__)
 
 
 @dataclass
 class RunnerStats:
-    selected_feeds: int = 0
-    fetched_entries: int = 0
-    candidate_count: int = 0
-    classified_count: int = 0
-    skipped_count: int = 0
-    failed_count: int = 0
+    feeds_processed: int = 0
+    articles_acquired: int = 0
+    articles_evaluated: int = 0
+    classifications_completed: int = 0
+    enrichments_completed: int = 0
+    decisions_made: int = 0
+    failures: int = 0
+
+
+class EditorialEnrichment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key_points: list[str] = Field(default_factory=list)
+    business_impact: str = Field(min_length=1, max_length=400)
+    recommended_action: str = Field(min_length=1, max_length=400)
+
+
+class EditorialDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    include_in_newsletter: bool
+    priority: str = Field(min_length=1, max_length=32)
+    rationale: str = Field(min_length=1, max_length=500)
+
+
+class NewsletterCard(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    headline: str = Field(min_length=1, max_length=200)
+    source: str = Field(min_length=1, max_length=255)
+    article_url: str = Field(min_length=1, max_length=2048)
+    highlights: list[str] = Field(default_factory=list)
+    decision_label: str = Field(min_length=1, max_length=64)
+
+
+class EditorialDecisionEngine:
+    def decide_pre_enrichment(
+        self,
+        classification: EditorialClassification,
+    ) -> EditorialDecision:
+        high_risk = classification.severity.value in {"High", "Critical"}
+        actionable = classification.actionability.value in {
+            "Action Recommended",
+            "Immediate Action",
+        }
+
+        include = high_risk or actionable
+        priority = "HIGH" if include else "NORMAL"
+        if include:
+            rationale = "Included by decision scoring; awaiting enrichment details."
+        else:
+            rationale = "Useful context, but not urgent enough for inclusion."
+
+        return EditorialDecision(
+            include_in_newsletter=include,
+            priority=priority,
+            rationale=rationale,
+        )
+
+    @staticmethod
+    def finalize_with_enrichment(
+        decision: EditorialDecision,
+        enrichment: EditorialEnrichment,
+    ) -> EditorialDecision:
+        if not decision.include_in_newsletter:
+            return decision
+        return decision.model_copy(update={"rationale": enrichment.recommended_action})
+
+
+class NewsletterCardGenerator:
+    def generate(
+        self,
+        *,
+        feed: Feed,
+        article: NormalizedArticleData,
+        classification: EditorialClassification,
+        enrichment: EditorialEnrichment,
+        decision: EditorialDecision,
+    ) -> NewsletterCard:
+        highlights = []
+        highlights.extend(enrichment.key_points[:3])
+        if classification.topics:
+            highlights.append(f"Topics: {', '.join(classification.topics[:3])}")
+        if classification.technologies:
+            highlights.append(
+                f"Technologies: {', '.join(classification.technologies[:3])}"
+            )
+
+        label = "Include" if decision.include_in_newsletter else "Skip"
+        label = f"{label} ({decision.priority})"
+
+        return NewsletterCard(
+            headline=article.title,
+            source=feed.name,
+            article_url=article.url,
+            highlights=highlights[:5],
+            decision_label=label,
+        )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Editorial Intelligence Evaluation Runner"
+        description="Developer-only Editorial Evaluation Runner"
     )
-
-    parser.add_argument(
-        "--domain",
-        required=True,
-        choices=["AI", "SECURITY", "ML"],
-        help="Technology domain to evaluate.",
-    )
-
     parser.add_argument(
         "--max-feeds",
         type=int,
         default=5,
         help="Maximum number of enabled feeds to process.",
     )
-
+    parser.add_argument(
+        "--max-articles-per-feed",
+        type=int,
+        default=3,
+        help="Maximum acquired articles to evaluate per feed.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
-    run_started = perf_counter()
     args = parse_args()
-    logger.info("Starting evaluation runner")
-    logger.info("==============================")
-    logger.info("Newsletter Run Started")
-    logger.info("==============================")
-    logger.info("Selected newsletter domain: %s", args.domain)
-    print("=" * 70)
-    print("Editorial Intelligence Evaluation")
-    print("=" * 70)
-    print(f"Domain     : {args.domain}")
-    print(f"Max Feeds  : {args.max_feeds}")
-    print("=" * 70)
+    run_started = perf_counter()
+    stats = RunnerStats()
+
+    settings = get_settings()
+    candidate_filter = CandidateFilterService()
+    classification_provider = OpenAIClassificationProvider(settings=settings)
+    enrichment_client = OpenAIClient(settings=settings)
+    decision_engine = EditorialDecisionEngine()
+    card_generator = NewsletterCardGenerator()
+    acquisition_factory = AcquisitionFactory()
+
+    print("=" * 88)
+    print("Developer Editorial Evaluation Runner")
+    print("=" * 88)
+    print(f"Max feeds              : {args.max_feeds}")
+    print(f"Max articles per feed  : {args.max_articles_per_feed}")
+    print("=" * 88)
     print()
 
     with SessionLocal() as db:
         feed_repository = FeedRepository(db)
-        rss_client = RSSClient()
-        article_mapper = ArticleMapper()
-        candidate_filter = CandidateFilterService()
-        classification_provider = OpenAIClassificationProvider()
-
-        feeds = _select_feeds(
-            feeds=feed_repository.list(),
-            domain=args.domain,
-            max_feeds=args.max_feeds,
-        )
-        logger.info("Feeds selected: %s", len(feeds))
-
-        stats = RunnerStats(selected_feeds=len(feeds))
-        seen_urls: set[str] = set()
+        feeds = _select_enabled_feeds(feed_repository.list(), args.max_feeds)
 
         if not feeds:
-            print("No enabled feeds found for the selected domain.")
+            print("No enabled feeds available.")
             print()
-            _print_summary(stats)
-            logger.info("Run completed with no eligible feeds.")
-            logger.info("Evaluation completed.")
+            _print_summary(stats, run_started)
             return
 
         for feed in feeds:
-            feed_started = perf_counter()
-            print(f"Feed: {feed.name} ({feed.url})")
+            stats.feeds_processed += 1
+            print(
+                f"Feed: {feed.name} | kind={feed.fetch_kind} | crawl_depth={feed.crawl_depth or 1}"
+            )
+            print(f"  URL: {feed.url}")
+
             try:
-                entries = rss_client.fetch_feed_entries(feed)
+                acquirer = acquisition_factory.for_feed(feed)
+                acquisition = acquirer.acquire(feed)
             except Exception as exc:
-                stats.failed_count += 1
-                print(f"  - fetch_failed: {exc}")
-                logger.exception("Feed failed (feed_id=%s name=%s).", feed.id, feed.name)
+                stats.failures += 1
+                print(f"  - acquire_failed: {exc}")
+                logger.exception("Feed acquisition failed (feed_id=%s).", feed.id)
+                print()
                 continue
 
-            stats.fetched_entries += len(entries)
-            logger.info(
-                "Feed fetched (feed_id=%s name=%s entries=%s duration=%.2fs).",
-                feed.id,
-                feed.name,
-                len(entries),
-                perf_counter() - feed_started,
+            stats.articles_acquired += len(acquisition.articles)
+            print(
+                f"  Acquired: {len(acquisition.articles)} normalized articles "
+                f"(raw discovered={acquisition.fetched_count})"
             )
+            if acquisition.errors:
+                print(f"  Acquisition warnings: {len(acquisition.errors)}")
+                for warning in acquisition.errors[:5]:
+                    print(f"    - {warning}")
 
-            for entry in entries:
-                try:
-                    article_data = article_mapper.map_entry_to_article_data(feed, entry)
-                except (ValidationError, ValueError) as exc:
-                    stats.skipped_count += 1
-                    print(f"  - skipped(mapper): {exc}")
-                    continue
-                except Exception as exc:
-                    stats.failed_count += 1
-                    print(f"  - failed(mapper): {exc}")
-                    continue
-
-                normalized_url = article_data.url.strip().lower()
-                if normalized_url in seen_urls:
-                    stats.skipped_count += 1
-                    print(f"  - skipped(duplicate_url): {article_data.url}")
-                    continue
-                seen_urls.add(normalized_url)
+            for idx, article_data in enumerate(
+                acquisition.articles[: args.max_articles_per_feed], start=1
+            ):
+                stats.articles_evaluated += 1
+                print(f"  Article #{idx}: {article_data.title}")
+                print(f"    URL: {article_data.url}")
 
                 article = _to_candidate_article(feed, article_data)
-                filter_result = candidate_filter.evaluate(article)
-                if filter_result.decision == CandidateDecision.SKIP:
-                    stats.skipped_count += 1
-                    print(f"  - skipped({filter_result.reason}): {article_data.title}")
-                    logger.info(
-                        "Candidate rejected (reason=%s feed_id=%s).",
-                        filter_result.reason,
-                        feed.id,
-                    )
-                    continue
-
-                stats.candidate_count += 1
-                logger.info("Candidate accepted (feed_id=%s).", feed.id)
-                classification_input = _to_classification_input(feed, article)
 
                 try:
-                    classification_started = perf_counter()
-                    classification = classification_provider.classify(
-                        classification_input
-                    )
-                    logger.info(
-                        "Classification completed (feed_id=%s duration=%.2fs).",
-                        feed.id,
-                        perf_counter() - classification_started,
+                    filter_result = candidate_filter.evaluate(article)
+                    print(
+                        "    Candidate Filter: "
+                        f"{filter_result.decision.value} ({filter_result.reason})"
                     )
                 except Exception as exc:
-                    stats.failed_count += 1
-                    print(f"  - failed(classification): {exc}")
+                    stats.failures += 1
+                    print(f"    Candidate Filter Failed: {exc}")
                     logger.exception(
-                        "Failed to classify article (feed_id=%s article_url=%s).",
+                        "Candidate filter failed (feed_id=%s url=%s).",
                         feed.id,
                         article_data.url,
                     )
                     continue
 
-                stats.classified_count += 1
-                _print_classification_result(
-                    feed, article.id, article_data.url, classification
-                )
+                if filter_result.decision == CandidateDecision.SKIP:
+                    print("    Classification: skipped")
+                    print("    Enrichment: skipped")
+                    print("    Decision: skipped")
+                    print("    Newsletter Card: skipped")
+                    print()
+                    continue
 
-        print()
-        _print_summary(stats)
-        logger.info("Articles fetched: %s", stats.fetched_entries)
-        logger.info("Articles after filtering: %s", stats.candidate_count)
-        logger.info("Articles classified: %s", stats.classified_count)
-        logger.info("Run completed. Duration: %.2fs", perf_counter() - run_started)
-        logger.info("==============================")
+                classification_input = _to_classification_input(feed, article)
+                try:
+                    classification = classification_provider.classify(classification_input)
+                    stats.classifications_completed += 1
+                    _print_classification(classification)
+                except Exception as exc:
+                    stats.failures += 1
+                    print(f"    Classification Failed: {exc}")
+                    logger.exception(
+                        "Classification failed (feed_id=%s url=%s).",
+                        feed.id,
+                        article_data.url,
+                    )
+                    print()
+                    continue
 
-    logger.info("Evaluation completed.")
+                try:
+                    decision = decision_engine.decide_pre_enrichment(classification)
+                    stats.decisions_made += 1
+                    _print_decision(decision, phase="pre-enrichment")
+                except Exception as exc:
+                    stats.failures += 1
+                    print(f"    Decision Engine Failed: {exc}")
+                    logger.exception(
+                        "Decision engine failed (feed_id=%s url=%s).",
+                        feed.id,
+                        article_data.url,
+                    )
+                    print()
+                    continue
+
+                if not decision.include_in_newsletter:
+                    print(
+                        "    Enrichment: skipped intentionally "
+                        "(decision include=False)"
+                    )
+                    print(
+                        "    Newsletter Card: skipped intentionally "
+                        "(decision include=False)"
+                    )
+                    print()
+                    continue
+
+                try:
+                    enrichment = _enrich_article(
+                        client=enrichment_client,
+                        article=article_data,
+                        classification=classification,
+                    )
+                    stats.enrichments_completed += 1
+                    _print_enrichment(enrichment)
+                except Exception as exc:
+                    stats.failures += 1
+                    print(f"    Enrichment Failed: {exc}")
+                    logger.exception(
+                        "Enrichment failed (feed_id=%s url=%s).",
+                        feed.id,
+                        article_data.url,
+                    )
+                    print()
+                    continue
+
+                decision = decision_engine.finalize_with_enrichment(decision, enrichment)
+                _print_decision(decision, phase="final")
+
+                try:
+                    card = card_generator.generate(
+                        feed=feed,
+                        article=article_data,
+                        classification=classification,
+                        enrichment=enrichment,
+                        decision=decision,
+                    )
+                    _print_newsletter_card(card)
+                except Exception as exc:
+                    stats.failures += 1
+                    print(f"    Newsletter Card Failed: {exc}")
+                    logger.exception(
+                        "Card generation failed (feed_id=%s url=%s).",
+                        feed.id,
+                        article_data.url,
+                    )
+
+                print()
+
+            print()
+
+    _print_summary(stats, run_started)
 
 
-def _select_feeds(feeds: Iterable[Feed], domain: str, max_feeds: int) -> list[Feed]:
+def _select_enabled_feeds(feeds: Iterable[Feed], max_feeds: int) -> list[Feed]:
     selected: list[Feed] = []
     for feed in feeds:
         if not feed.is_enabled:
             continue
-        if feed.technology_domain is None or not feed.technology_domain.is_enabled:
-            continue
-        if feed.technology_domain.name.strip().upper() != domain.upper():
+        if feed.technology_domain is not None and not feed.technology_domain.is_enabled:
             continue
         selected.append(feed)
         if len(selected) >= max_feeds:
@@ -236,50 +365,113 @@ def _to_candidate_article(feed: Feed, article_data: NormalizedArticleData) -> Ar
 
 
 def _to_classification_input(feed: Feed, article: Article) -> ClassificationInput:
-    domain_name = ""
-    if feed.technology_domain is not None:
-        domain_name = feed.technology_domain.name
-
+    domain_name = (
+        feed.technology_domain.name if feed.technology_domain is not None else ""
+    )
     return ClassificationInput(
-        title=article.title,
-        source_name=feed.name,
+        title=article.title or "",
+        source_name=feed.name or "",
         technology_domain=domain_name,
         summary=article.summary,
         content=article.content,
     )
 
 
-def _print_classification_result(
-    feed: Feed,
-    article_id: UUID,
-    url: str,
+def _enrich_article(
+    *,
+    client: OpenAIClient,
+    article: NormalizedArticleData,
     classification: EditorialClassification,
-) -> None:
-    print(f"  - classified: {classification.article_type.value} | {url}")
+) -> EditorialEnrichment:
+    prompt = [
+        {
+            "role": "system",
+            "content": (
+                "You are an editorial enrichment assistant. "
+                "Return concise enrichment in the requested structured format."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Title: {article.title}\n"
+                f"URL: {article.url}\n"
+                f"Published At: {article.published_at.isoformat() if article.published_at else 'unknown'}\n"
+                f"Summary: {article.summary or ''}\n"
+                f"Content: {article.content or ''}\n"
+                f"Classification Type: {classification.article_type.value}\n"
+                f"Severity: {classification.severity.value}\n"
+                f"Actionability: {classification.actionability.value}\n"
+                "Provide key points, business impact, and recommended action."
+            ),
+        },
+    ]
+    return client.parse_response(
+        model=client.enrichment_model,
+        input=prompt,
+        text_format=EditorialEnrichment,
+    )
+
+
+def _print_classification(classification: EditorialClassification) -> None:
     print(
-        f"    severity={classification.severity.value} actionability={classification.actionability.value} audience={classification.audience.value} confidence={classification.confidence:.2f}"
+        "    Classification: "
+        f"type={classification.article_type.value} "
+        f"severity={classification.severity.value} "
+        f"actionability={classification.actionability.value} "
+        f"audience={classification.audience.value} "
+        f"confidence={classification.confidence:.2f}"
     )
     if classification.topics:
-        print(f"    topics={', '.join(classification.topics)}")
+        print(f"      Topics: {', '.join(classification.topics)}")
     if classification.technologies:
-        print(f"    technologies={', '.join(classification.technologies)}")
-    print(f"    feed={feed.name} article_id={article_id}")
+        print(f"      Technologies: {', '.join(classification.technologies)}")
 
 
-def _print_summary(stats: RunnerStats) -> None:
-    print("=" * 70)
+def _print_enrichment(enrichment: EditorialEnrichment) -> None:
+    print("    Enrichment:")
+    if enrichment.key_points:
+        for point in enrichment.key_points:
+            print(f"      - {point}")
+    print(f"      Business Impact: {enrichment.business_impact}")
+    print(f"      Recommended Action: {enrichment.recommended_action}")
+
+
+def _print_decision(decision: EditorialDecision, phase: str) -> None:
+    print(
+        f"    Decision Engine ({phase}): "
+        f"include={decision.include_in_newsletter} "
+        f"priority={decision.priority} "
+        f"rationale={decision.rationale}"
+    )
+
+
+def _print_newsletter_card(card: NewsletterCard) -> None:
+    print("    Newsletter Card:")
+    print(f"      Headline: {card.headline}")
+    print(f"      Source: {card.source}")
+    print(f"      URL: {card.article_url}")
+    print(f"      Decision: {card.decision_label}")
+    if card.highlights:
+        for highlight in card.highlights:
+            print(f"      Highlight: {highlight}")
+
+
+def _print_summary(stats: RunnerStats, run_started: float) -> None:
+    print("=" * 88)
     print("Run Summary")
-    print("=" * 70)
-    print(f"Selected Feeds   : {stats.selected_feeds}")
-    print(f"Fetched Entries  : {stats.fetched_entries}")
-    print(f"Candidates       : {stats.candidate_count}")
-    print(f"Classified       : {stats.classified_count}")
-    print(f"Skipped          : {stats.skipped_count}")
-    print(f"Failed           : {stats.failed_count}")
-    print("=" * 70)
+    print("=" * 88)
+    print(f"Feeds processed           : {stats.feeds_processed}")
+    print(f"Articles acquired         : {stats.articles_acquired}")
+    print(f"Articles evaluated        : {stats.articles_evaluated}")
+    print(f"Classifications completed : {stats.classifications_completed}")
+    print(f"Enrichments completed     : {stats.enrichments_completed}")
+    print(f"Decisions made            : {stats.decisions_made}")
+    print(f"Failures                  : {stats.failures}")
+    print(f"Duration (s)              : {perf_counter() - run_started:.2f}")
+    print("=" * 88)
 
 
 if __name__ == "__main__":
     configure_logging(level=logging.INFO)
-
     main()
