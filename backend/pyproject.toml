@@ -18,6 +18,7 @@ dependencies = [
     "requests>=2.34.2",
     "sqlalchemy>=2.0.51",
     "uvicorn>=0.51.0",
+    "crawl4ai>=0.9.2",
 ]
 
 [dependency-groups]

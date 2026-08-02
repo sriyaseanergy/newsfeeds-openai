@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 class FetchKind(str, Enum):
     RSS = "RSS"
+    CRAWL = "CRAWL"
 
 
 class Feed(Base):

@@ -8,11 +8,11 @@ from app.catalog.technology_domain.model import (
     TechnologyDomain,
     TechnologyDomainSchedule,
 )
+from app.ingestion.acquisition_factory import AcquisitionFactory
 from app.ingestion.mapper import ArticleMapper
 from app.ingestion.models import IngestionResult, NormalizedArticleData
 from app.ingestion.rss_client import RSSClient
 from app.infrastructure.logging import get_logger
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -26,10 +26,25 @@ class IngestionService:
         db: Session,
         rss_client: RSSClient | None = None,
         article_mapper: ArticleMapper | None = None,
+        acquisition_factory: AcquisitionFactory | None = None,
     ):
         self.db = db
-        self.rss_client = rss_client or RSSClient()
-        self.article_mapper = article_mapper or ArticleMapper()
+        if acquisition_factory is not None:
+            self.acquisition_factory = acquisition_factory
+            return
+
+        if rss_client is not None or article_mapper is not None:
+            from app.ingestion.rss_fetcher import RSSFeedAcquirer
+
+            self.acquisition_factory = AcquisitionFactory(
+                rss_acquirer=RSSFeedAcquirer(
+                    rss_client=rss_client or RSSClient(),
+                    article_mapper=article_mapper or ArticleMapper(),
+                )
+            )
+            return
+
+        self.acquisition_factory = AcquisitionFactory()
 
     def ingest_feed(self, feed_id: UUID) -> IngestionResult:
         logger.info("Feed loading started (feed_id=%s).", feed_id)
@@ -137,14 +152,15 @@ class IngestionService:
         logger.info("Feed fetch started (feed_id=%s name=%s).", feed.id, feed.name)
         started_at = perf_counter()
         try:
-            entries = self.rss_client.fetch_feed_entries(feed)
+            acquirer = self.acquisition_factory.for_feed(feed)
+            acquisition = acquirer.acquire(feed)
         except Exception as exc:
             logger.exception("Feed failed during fetch (feed_id=%s name=%s).", feed.id, feed.name)
             result.errors.append(f"Feed fetch failed: {exc}")
             return result
         fetch_elapsed = perf_counter() - started_at
 
-        result.fetched_count = len(entries)
+        result.fetched_count = acquisition.fetched_count
         logger.info(
             "Feed fetched successfully (feed_id=%s entries=%s duration=%.2fs).",
             feed.id,
@@ -152,23 +168,11 @@ class IngestionService:
             fetch_elapsed,
         )
 
-        for entry in entries:
-            try:
-                article_data = self.article_mapper.map_entry_to_article_data(
-                    feed, entry
-                )
-                logger.info("Article mapped (feed_id=%s article_url=%s).", feed.id, article_data.url)
-            except (ValidationError, ValueError) as exc:
-                result.skipped_count += 1
-                logger.info("Article skipped by mapper validation (feed_id=%s).", feed.id)
-                result.errors.append(f"Entry skipped: {exc}")
-                continue
-            except Exception as exc:
-                result.skipped_count += 1
-                logger.exception("Article mapping failed unexpectedly (feed_id=%s).", feed.id)
-                result.errors.append(f"Entry mapping failed: {exc}")
-                continue
+        if acquisition.errors:
+            result.skipped_count += len(acquisition.errors)
+            result.errors.extend(acquisition.errors)
 
+        for article_data in acquisition.articles:
             existing = self.db.execute(
                 select(Article.id).where(Article.url == article_data.url)
             ).scalar_one_or_none()
