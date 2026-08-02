@@ -23,7 +23,7 @@ const API_BASE = (() => {
 
 const API = {
     articles:          `${API_BASE}/api/articles`,
-    emails:            `${API_BASE}/api/email/recipients`,
+    emails:            `${API_BASE}/api/email-recipients`,
     feeds:             `${API_BASE}/api/feeds`,
     technologyDomains: `${API_BASE}/api/technology-domains`,
     status:            `${API_BASE}/api/status`,
@@ -32,7 +32,26 @@ const API = {
 
 async function apiFetch(url, opts = {}) {
     const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts })
-    if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+    if (!r.ok) {
+        let detail = ''
+        try {
+            const body = await r.json()
+            if (typeof body?.detail === 'string') detail = body.detail
+            else if (Array.isArray(body?.detail) && body.detail.length) {
+                detail = body.detail.map(d => d?.msg || d?.message).filter(Boolean).join(', ')
+            } else if (typeof body?.message === 'string') {
+                detail = body.message
+            }
+        } catch {
+            try {
+                detail = await r.text()
+            } catch {
+                detail = ''
+            }
+        }
+        throw new Error(`${r.status} ${detail || r.statusText}`)
+    }
+    if (r.status === 204) return null
     return r.json()
 }
 
@@ -1052,7 +1071,7 @@ function ManageTechnologyDomains({ technologyDomains, feeds, onTechnologyDomains
 
 // ─── Settings view ────────────────────────────────────────────────────────────
 
-function SettingsView({ feeds, technologyDomains, onFeedsChange, onTechnologyDomainsChange, recipients, onUpdateRecipients, sessionEmployee }) {
+function SettingsView({ feeds, technologyDomains, onFeedsChange, onTechnologyDomainsChange, recipients, recipientsLoading, onUpdateRecipients, sessionEmployee }) {
     const canManageFeeds = canManageFeedSources(sessionEmployee)
     const [input,    setInput]    = useState('')
     const [adding,   setAdding]   = useState(false)
@@ -1062,11 +1081,41 @@ function SettingsView({ feeds, technologyDomains, onFeedsChange, onTechnologyDom
     const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
 
     const handleAddRecipient = async () => {
-        // Disabled for now as backend feature is planned
+        const email = input.trim().toLowerCase()
+        if (!email) { setRecError('Email is required'); return }
+        if (!validEmail(email)) { setRecError('Please enter a valid email address'); return }
+        setRecError('')
+        setAdding(true)
+        try {
+            const created = await apiFetch(API.emails, {
+                method: 'POST',
+                body: JSON.stringify({ email }),
+            })
+            onUpdateRecipients(prev => [created, ...prev])
+            setInput('')
+        } catch (e) {
+            const msg = String(e?.message || '')
+            if (msg.includes('409')) setRecError('This email recipient already exists')
+            else if (msg.includes('422')) setRecError('Please enter a valid email address')
+            else setRecError(`Unable to add recipient: ${msg}`)
+        } finally {
+            setAdding(false)
+        }
     }
 
-    const handleRemoveRecipient = async email => {
-        // Disabled for now as backend feature is planned
+    const handleRemoveRecipient = async recipient => {
+        setRecError('')
+        setRemoving(recipient.id)
+        try {
+            await apiFetch(`${API.emails}/${recipient.id}`, { method: 'DELETE' })
+            onUpdateRecipients(prev => prev.filter(r => r.id !== recipient.id))
+        } catch (e) {
+            const msg = String(e?.message || '')
+            if (msg.includes('404')) setRecError('Recipient was already removed')
+            else setRecError(`Unable to remove recipient: ${msg}`)
+        } finally {
+            setRemoving(null)
+        }
     }
 
     return (
@@ -1098,32 +1147,59 @@ function SettingsView({ feeds, technologyDomains, onFeedsChange, onTechnologyDom
             </div>
 
             {/* ── Email Recipients ─────────────────────────────────────────── */}
-            <div style={{ opacity: 0.6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <SectionTitle>Email Recipients</SectionTitle>
-                    <Badge color={C.amber}>Coming Soon</Badge>
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginBottom: 12 }}>
-                    Recipient list management will be re-enabled when backend support is added.
-                </div>
+            <div>
+                <SectionTitle>Email Recipients</SectionTitle>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                     <input
-                        disabled
                         value={input}
+                        onChange={e => { setInput(e.target.value); setRecError('') }}
+                        onKeyDown={e => e.key === 'Enter' && handleAddRecipient()}
                         placeholder="name@company.com"
                         style={{
                             flex: 1, background: C.panelBg,
-                            border: `0.5px solid ${C.border}`,
+                            border: `0.5px solid ${recError ? C.red : C.border}`,
                             borderRadius: 6, padding: '7px 11px', color: C.text,
                             fontFamily: 'inherit', fontSize: 12, outline: 'none',
                         }}
                     />
-                    <Btn disabled variant="primary">Add</Btn>
+                    <Btn variant="primary" loading={adding} onClick={handleAddRecipient}>Add</Btn>
                 </div>
+                {recError && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{recError}</div>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 12, color: C.muted }}>
-                        No recipients configured
-                    </div>
+                    {recipientsLoading ? (
+                        <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 12, color: C.muted }}>
+                            Loading recipients...
+                        </div>
+                    ) : recipients.length === 0 ? (
+                        <div style={{ padding: '12px 0', textAlign: 'center', fontSize: 12, color: C.muted }}>
+                            No recipients configured
+                        </div>
+                    ) : (
+                        recipients.map(recipient => (
+                            <div key={recipient.id} style={{
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                background: C.panelBg, border: `0.5px solid ${C.border}`,
+                                borderRadius: 6, padding: '7px 11px',
+                            }}>
+                                <Dot color={recipient.is_enabled ? C.green : C.muted} size={6} />
+                                <span style={{ flex: 1, fontSize: 12, color: C.text }}>{recipient.email}</span>
+                                <button
+                                    onClick={() => handleRemoveRecipient(recipient)}
+                                    disabled={removing === recipient.id}
+                                    title="Delete recipient"
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        color: C.muted, fontSize: 14, lineHeight: 1,
+                                        padding: '0 2px',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.color = C.red}
+                                    onMouseLeave={e => e.currentTarget.style.color = C.muted}
+                                >
+                                    {removing === recipient.id ? <Spinner size={10} /> : '×'}
+                                </button>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </div>
@@ -1228,6 +1304,7 @@ export default function App() {
     const [feeds,         setFeeds]         = useState([])
     const [technologyDomains, setTechnologyDomains] = useState([])
     const [recipients,    setRecipients]    = useState([])
+    const [recipientsLoading, setRecipientsLoading] = useState(false)
     const [articles,      setArticles]      = useState([])
     const [feedHealth,    setFeedHealth]    = useState([])
     const [artLoading,    setArtLoading]    = useState(false)
@@ -1313,8 +1390,16 @@ export default function App() {
     }, [articles.length, feeds])
 
     const fetchRecipients = useCallback(async () => {
-        // Suspend API call until backend recipients table is implemented
-        setRecipients([])
+        setRecipientsLoading(true)
+        try {
+            const data = await apiFetch(API.emails)
+            setRecipients(Array.isArray(data) ? data : [])
+        } catch (e) {
+            console.error(e)
+            setRecipients([])
+        } finally {
+            setRecipientsLoading(false)
+        }
     }, [])
 
     const fetchFeeds = useCallback(async () => {
@@ -1433,6 +1518,7 @@ export default function App() {
                                 onFeedsChange={fetchFeeds}
                                 onTechnologyDomainsChange={fetchTechnologyDomains}
                                 recipients={recipients}
+                                recipientsLoading={recipientsLoading}
                                 onUpdateRecipients={setRecipients}
                                 sessionEmployee={sessionEmployee}
                             />
