@@ -75,10 +75,34 @@ class CrawlFetchConfig(BaseModel):
 
 
 class Crawl4AIFetcher(FeedAcquirer):
+    # Path segments that are never articles, even when same-host and
+    # 2+ segments deep. Extend this list as new false positives show up.
+    _NON_ARTICLE_PATH_TOKENS = [
+        "/tag/",
+        "/tags/",
+        "/category/",
+        "/categories/",
+        "/author/",
+        "/about",
+        "/contact",
+        "/careers",
+        "/pricing",
+        "/privacy",
+        "/terms",
+        "/login",
+        "/signup",
+        "/docs/",
+    ]
+
+    _ARTICLE_PATH_TOKENS = ["article", "blog", "post", "news", "insight", "story"]
+
+    _PAGINATION_QUERY_KEYS = {"page", "paged", "p", "offset", "start", "cursor"}
+
     def acquire(self, feed: Feed) -> FeedAcquisitionResult:
         config = CrawlFetchConfig.from_feed(feed)
+        seed_host = urlparse(feed.url).netloc.lower()
         discovered_links = self._discover_links(feed.url, config)
-        return self._to_normalized_articles(feed, discovered_links)
+        return self._to_normalized_articles(feed, discovered_links, seed_host)
 
     def _discover_links(
         self,
@@ -227,11 +251,12 @@ class Crawl4AIFetcher(FeedAcquirer):
         self,
         feed: Feed,
         discovered_links: list[dict[str, str | datetime | None]],
+        seed_host: str,
     ) -> FeedAcquisitionResult:
         result = FeedAcquisitionResult(fetched_count=len(discovered_links))
         for item in discovered_links:
             url = str(item.get("url") or "").strip()
-            if not self._is_article_url(url):
+            if not self._is_article_url(url, seed_host):
                 continue
             title = str(item.get("title") or "").strip() or self._title_from_url(url)
             if not title:
@@ -312,14 +337,19 @@ class Crawl4AIFetcher(FeedAcquirer):
             return True
         return False
 
-    @staticmethod
-    def _looks_like_pagination_url(candidate_url: str, current_page_url: str) -> bool:
+    @classmethod
+    def _looks_like_pagination_url(cls, candidate_url: str, current_page_url: str) -> bool:
         parsed = urlparse(candidate_url)
         current = urlparse(current_page_url)
 
         query = parse_qs(parsed.query)
-        pagination_keys = {"page", "paged", "p", "offset", "start", "cursor"}
-        if any(key in query for key in pagination_keys):
+        # Substring match, not exact match: platforms like Webflow emit
+        # hashed/prefixed pagination params (e.g. "8457a1db_page") that
+        # never equal "page" exactly but clearly still mean pagination.
+        if any(
+            any(pagination_key in query_key.lower() for pagination_key in cls._PAGINATION_QUERY_KEYS)
+            for query_key in query
+        ):
             return True
 
         path = parsed.path.lower()
@@ -331,26 +361,44 @@ class Crawl4AIFetcher(FeedAcquirer):
             return True
         return False
 
-    @staticmethod
-    def _is_article_url(url: str) -> bool:
+    @classmethod
+    def _is_article_url(cls, url: str, seed_host: str | None = None) -> bool:
         if not url:
             return False
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             return False
+
+        # Reject anything off the feed's own domain outright — nav links,
+        # social icons, external partner/asset links (LinkedIn, Google
+        # Drive, etc.) should never be treated as articles.
+        if seed_host and parsed.netloc.lower() != seed_host:
+            return False
+
+        # Reject anything that looks like a pagination/listing URL before
+        # falling through to path-based heuristics.
+        if cls._looks_like_pagination_url(url, url):
+            return False
+
         path = parsed.path.lower()
         if not path or path == "/":
             return False
-        non_article_tokens = ["/tag/", "/tags/", "/category/", "/categories/", "/author/", "/about", "/contact"]
-        if any(token in path for token in non_article_tokens):
+        if any(token in path for token in cls._NON_ARTICLE_PATH_TOKENS):
             return False
-        article_tokens = ["article", "blog", "post", "news", "insight", "story"]
-        if any(token in path for token in article_tokens):
+        if any(token in path for token in cls._ARTICLE_PATH_TOKENS):
             return True
+
         parts = [part for part in path.split("/") if part]
         if len(parts) >= 3 and all(part.isdigit() for part in parts[:3]):
             return True
-        return len(parts) >= 2
+
+        # Removed the old "any same-host URL with 2+ path segments counts
+        # as an article" fallback — it was the main source of false
+        # positives (product pages, nav sections, etc.). Anything that
+        # doesn't match an article token or a dated-path pattern above is
+        # now excluded by default; add specific per-source tokens to
+        # _ARTICLE_PATH_TOKENS if a legitimate source needs a wider net.
+        return False
 
     @staticmethod
     def _title_from_url(url: str) -> str:
