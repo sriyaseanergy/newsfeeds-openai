@@ -82,6 +82,8 @@ class GraphClient:
         path: str,
         *,
         json_body: dict[str, Any] | None = None,
+        max_retries: int = 3,
+        default_retry_after: int = 30,
     ) -> requests.Response:
         token = self._get_access_token()
         url = f"{GRAPH_API_BASE_URL}{path}"
@@ -92,41 +94,73 @@ class GraphClient:
             "Content-Type": "application/json",
         }
 
-        logger.info(
-            "Microsoft Graph request started (method=%s path=%s).", method, path
-        )
-
-        try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=headers,
-                json=json_body,
-                timeout=timeout,
-            )
-        except requests.RequestException as exc:
-            logger.exception(
-                "Microsoft Graph request failed before receiving response."
-            )
-            raise EmailSendError("Failed to send request to Microsoft Graph.") from exc
-
-        if response.status_code in (401, 403):
-            logger.warning("Microsoft Graph authentication/authorization failed.")
-            raise EmailAuthenticationError(
-                f"Graph authentication failed (status={response.status_code})."
+        attempt = 0
+        while True:
+            attempt += 1
+            logger.info(
+                "Microsoft Graph request started (method=%s path=%s attempt=%s).",
+                method,
+                path,
+                attempt,
             )
 
-        if response.status_code >= 400:
-            logger.warning(
-                "Microsoft Graph request failed (status=%s).", response.status_code
-            )
-            body_snippet = response.text[:500]
-            raise EmailSendError(
-                f"Graph API request failed (status={response.status_code}): {body_snippet}"
-            )
+            try:
+                response = requests.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    json=json_body,
+                    timeout=timeout,
+                )
+            except requests.RequestException as exc:
+                logger.exception(
+                    "Microsoft Graph request failed before receiving response."
+                )
+                raise EmailSendError("Failed to send request to Microsoft Graph.") from exc
 
-        logger.info(
-            "Microsoft Graph request completed (status=%s).",
-            response.status_code,
-        )
-        return response
+            if response.status_code == 429:
+                retry_after_header = response.headers.get("Retry-After")
+                try:
+                    retry_after = int(retry_after_header)
+                except (TypeError, ValueError):
+                    retry_after = default_retry_after
+
+                body_snippet = response.text[:500]
+                logger.warning(
+                    "Microsoft Graph request throttled (status=429 attempt=%s "
+                    "retry_after=%ss body=%s).",
+                    attempt,
+                    retry_after,
+                    body_snippet,
+                )
+
+                if attempt > max_retries:
+                    raise EmailSendError(
+                        f"Graph API request throttled after {max_retries} retries: "
+                        f"{body_snippet}"
+                    )
+
+                time.sleep(retry_after)
+                continue
+
+            if response.status_code in (401, 403):
+                logger.warning("Microsoft Graph authentication/authorization failed.")
+                raise EmailAuthenticationError(
+                    f"Graph authentication failed (status={response.status_code})."
+                )
+
+            if response.status_code >= 400:
+                logger.warning(
+                    "Microsoft Graph request failed (status=%s).", response.status_code
+                )
+                body_snippet = response.text[:500]
+                raise EmailSendError(
+                    f"Graph API request failed (status={response.status_code}): {body_snippet}"
+                )
+
+            logger.info(
+                "Microsoft Graph request completed (status=%s attempt=%s).",
+                response.status_code,
+                attempt,
+            )
+            return response
