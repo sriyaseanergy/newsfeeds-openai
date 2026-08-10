@@ -16,7 +16,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from time import perf_counter
 
-from app.ai.openai.client import OpenAIClient
 from app.catalog.article.model import Article
 from app.catalog.feed.model import Feed
 from app.catalog.feed.repository import FeedRepository
@@ -29,6 +28,10 @@ from app.editorial.decision import (
     DecisionDiagnostics,
     EditorialDecision,
     EditorialDecisionEngine,
+)
+from app.editorial.enrichment import (
+    EditorialEnrichment,
+    OpenAIEditorialEnrichmentProvider,
 )
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.logging import configure_logging, get_logger
@@ -48,15 +51,6 @@ class RunnerStats:
     enrichments_completed: int = 0
     decisions_made: int = 0
     failures: int = 0
-
-
-class EditorialEnrichment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    key_points: list[str] = Field(default_factory=list)
-    business_impact: str = Field(min_length=1, max_length=400)
-    recommended_action: str = Field(min_length=1, max_length=400)
-
 
 class NewsletterCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -125,7 +119,7 @@ def main() -> None:
     settings = get_settings()
     candidate_filter = CandidateFilterService()
     classification_provider = OpenAIClassificationProvider(settings=settings)
-    enrichment_client = OpenAIClient(settings=settings)
+    enrichment_provider = OpenAIEditorialEnrichmentProvider(settings=settings)
     decision_engine = EditorialDecisionEngine()
     card_generator = NewsletterCardGenerator()
     acquisition_factory = AcquisitionFactory()
@@ -257,8 +251,7 @@ def main() -> None:
                     continue
 
                 try:
-                    enrichment = _enrich_article(
-                        client=enrichment_client,
+                    enrichment = enrichment_provider.enrich(
                         article=article_data,
                         classification=classification,
                     )
@@ -341,42 +334,6 @@ def _to_classification_input(feed: Feed, article: Article) -> ClassificationInpu
         technology_domain=domain_name,
         summary=article.summary,
         content=article.content,
-    )
-
-
-def _enrich_article(
-    *,
-    client: OpenAIClient,
-    article: NormalizedArticleData,
-    classification: EditorialClassification,
-) -> EditorialEnrichment:
-    prompt = [
-        {
-            "role": "system",
-            "content": (
-                "You are an editorial enrichment assistant. "
-                "Return concise enrichment in the requested structured format."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Title: {article.title}\n"
-                f"URL: {article.url}\n"
-                f"Published At: {article.published_at.isoformat() if article.published_at else 'unknown'}\n"
-                f"Summary: {article.summary or ''}\n"
-                f"Content: {article.content or ''}\n"
-                f"Classification Type: {classification.article_type.value}\n"
-                f"Severity: {classification.severity.value}\n"
-                f"Actionability: {classification.actionability.value}\n"
-                "Provide key points, business impact, and recommended action."
-            ),
-        },
-    ]
-    return client.parse_response(
-        model=client.enrichment_model,
-        input=prompt,
-        text_format=EditorialEnrichment,
     )
 
 
