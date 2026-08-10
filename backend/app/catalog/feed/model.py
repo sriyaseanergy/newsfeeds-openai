@@ -62,6 +62,12 @@ class Feed(Base):
         default=1,
         server_default=text("1"),
     )
+    max_new_articles_per_crawl: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=20,
+        server_default=text("20"),
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -153,7 +153,8 @@ class IngestionService:
         started_at = perf_counter()
         try:
             acquirer = self.acquisition_factory.for_feed(feed)
-            acquisition = acquirer.acquire(feed)
+            known_urls = self._known_article_urls_for_feed(feed.id)
+            acquisition = acquirer.acquire(feed, known_urls=known_urls)
         except Exception as exc:
             logger.exception("Feed failed during fetch (feed_id=%s name=%s).", feed.id, feed.name)
             result.errors.append(f"Feed fetch failed: {exc}")
@@ -215,3 +216,8 @@ class IngestionService:
             source_identifier=article_data.source_identifier,
             is_processed=article_data.is_processed,
         )
+
+    def _known_article_urls_for_feed(self, feed_id: UUID) -> set[str]:
+        statement = select(Article.url).where(Article.feed_id == feed_id)
+        urls = self.db.execute(statement).scalars().all()
+        return {str(url).strip().lower() for url in urls if str(url).strip()}

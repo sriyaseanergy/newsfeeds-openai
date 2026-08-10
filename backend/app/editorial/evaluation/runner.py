@@ -25,6 +25,11 @@ from app.editorial.candidate_filter.enums import CandidateDecision
 from app.editorial.candidate_filter.service import CandidateFilterService
 from app.editorial.classification.models import ClassificationInput, EditorialClassification
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
+from app.editorial.decision import (
+    DecisionDiagnostics,
+    EditorialDecision,
+    EditorialDecisionEngine,
+)
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.logging import configure_logging, get_logger
 from app.ingestion.acquisition_factory import AcquisitionFactory
@@ -53,14 +58,6 @@ class EditorialEnrichment(BaseModel):
     recommended_action: str = Field(min_length=1, max_length=400)
 
 
-class EditorialDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    include_in_newsletter: bool
-    priority: str = Field(min_length=1, max_length=32)
-    rationale: str = Field(min_length=1, max_length=500)
-
-
 class NewsletterCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -69,41 +66,6 @@ class NewsletterCard(BaseModel):
     article_url: str = Field(min_length=1, max_length=2048)
     highlights: list[str] = Field(default_factory=list)
     decision_label: str = Field(min_length=1, max_length=64)
-
-
-class EditorialDecisionEngine:
-    def decide_pre_enrichment(
-        self,
-        classification: EditorialClassification,
-    ) -> EditorialDecision:
-        high_risk = classification.severity.value in {"High", "Critical"}
-        actionable = classification.actionability.value in {
-            "Action Recommended",
-            "Immediate Action",
-        }
-
-        include = high_risk or actionable
-        priority = "HIGH" if include else "NORMAL"
-        if include:
-            rationale = "Included by decision scoring; awaiting enrichment details."
-        else:
-            rationale = "Useful context, but not urgent enough for inclusion."
-
-        return EditorialDecision(
-            include_in_newsletter=include,
-            priority=priority,
-            rationale=rationale,
-        )
-
-    @staticmethod
-    def finalize_with_enrichment(
-        decision: EditorialDecision,
-        enrichment: EditorialEnrichment,
-    ) -> EditorialDecision:
-        if not decision.include_in_newsletter:
-            return decision
-        return decision.model_copy(update={"rationale": enrichment.recommended_action})
-
 
 class NewsletterCardGenerator:
     def generate(
@@ -263,9 +225,14 @@ def main() -> None:
                     continue
 
                 try:
-                    decision = decision_engine.decide_pre_enrichment(classification)
+                    decision = decision_engine.decide(classification)
                     stats.decisions_made += 1
                     _print_decision(decision, phase="pre-enrichment")
+                    diagnostics = decision_engine.build_diagnostics(
+                        classification=classification,
+                        decision=decision,
+                    )
+                    _print_decision_diagnostics(diagnostics)
                 except Exception as exc:
                     stats.failures += 1
                     print(f"    Decision Engine Failed: {exc}")
@@ -455,6 +422,21 @@ def _print_newsletter_card(card: NewsletterCard) -> None:
     if card.highlights:
         for highlight in card.highlights:
             print(f"      Highlight: {highlight}")
+
+
+def _print_decision_diagnostics(diagnostics: DecisionDiagnostics) -> None:
+    print("    Decision Diagnostics:")
+    for signal in diagnostics.signals:
+        print(
+            f"      {signal.name}: {signal.value} -> +{signal.contribution}"
+        )
+    print(f"      Final Score: {diagnostics.final_score}")
+    print(f"      Threshold: {diagnostics.threshold}")
+    print(f"      Result: include={diagnostics.include}")
+    if diagnostics.rejection_reasons:
+        print("      Rejection Reasons:")
+        for reason in diagnostics.rejection_reasons:
+            print(f"        - {reason}")
 
 
 def _print_summary(stats: RunnerStats, run_started: float) -> None:

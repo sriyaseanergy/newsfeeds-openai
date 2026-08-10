@@ -14,7 +14,11 @@ class RSSFeedAcquirer(FeedAcquirer):
         self.rss_client = rss_client or RSSClient()
         self.article_mapper = article_mapper or ArticleMapper()
 
-    def acquire(self, feed: Feed) -> FeedAcquisitionResult:
+    def acquire(
+        self,
+        feed: Feed,
+        known_urls: set[str] | None = None,
+    ) -> FeedAcquisitionResult:
         entries = self.rss_client.fetch_feed_entries(feed)
         result = FeedAcquisitionResult(fetched_count=len(entries))
 

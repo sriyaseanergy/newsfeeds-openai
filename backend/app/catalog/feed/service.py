@@ -85,7 +85,12 @@ class FeedService:
     @staticmethod
     def _normalize_create_payload(payload: FeedCreate) -> FeedCreate:
         if payload.fetch_kind != FetchKind.CRAWL:
-            return payload.model_copy(update={"crawl_depth": None})
+            return payload.model_copy(
+                update={
+                    "crawl_depth": None,
+                    "max_new_articles_per_crawl": None,
+                }
+            )
         return payload
 
     @staticmethod
@@ -93,9 +98,18 @@ class FeedService:
         effective_kind = payload.fetch_kind or feed.fetch_kind
         should_ignore_crawl_depth = (
             effective_kind != FetchKind.CRAWL
-            and (payload.fetch_kind is not None or payload.crawl_depth is not None)
+            and (
+                payload.fetch_kind is not None
+                or payload.crawl_depth is not None
+                or payload.max_new_articles_per_crawl is not None
+            )
         )
         if should_ignore_crawl_depth:
-            return payload.model_copy(update={"crawl_depth": None})
+            return payload.model_copy(
+                update={
+                    "crawl_depth": None,
+                    "max_new_articles_per_crawl": None,
+                }
+            )
         return payload
 
