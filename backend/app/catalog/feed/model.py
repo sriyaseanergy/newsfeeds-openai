@@ -4,7 +4,17 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from app.infrastructure.database.base import Base
-from sqlalchemy import Boolean, DateTime, Enum as SAEnum, ForeignKey, String, Text, func, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +25,7 @@ if TYPE_CHECKING:
 
 class FetchKind(str, Enum):
     RSS = "RSS"
+    CRAWL = "CRAWL"
 
 
 class Feed(Base):
@@ -44,6 +55,18 @@ class Feed(Base):
         nullable=False,
         default=FetchKind.RSS,
         server_default=FetchKind.RSS.value,
+    )
+    crawl_depth: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=1,
+        server_default=text("1"),
+    )
+    max_new_articles_per_crawl: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        default=20,
+        server_default=text("20"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

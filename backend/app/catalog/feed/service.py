@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app.catalog.feed.model import Feed
+from app.catalog.feed.model import Feed, FetchKind
 from app.catalog.feed.repository import FeedRepository
 from app.catalog.feed.schemas import FeedCreate, FeedUpdate
 from app.catalog.technology_domain.repository import TechnologyDomainRepository
@@ -29,16 +29,19 @@ class FeedService:
         self.technology_domain_repository = technology_domain_repository
 
     def create(self, payload: FeedCreate) -> Feed:
-        self._ensure_technology_domain_exists(payload.technology_domain_id)
+        normalized_payload = self._normalize_create_payload(payload)
+        self._ensure_technology_domain_exists(normalized_payload.technology_domain_id)
 
-        existing = self.repository.get_by_url(str(payload.url))
+        existing = self.repository.get_by_url(str(normalized_payload.url))
         if existing is not None:
-            raise FeedDuplicateUrlError(f"Feed with URL '{payload.url}' already exists.")
+            raise FeedDuplicateUrlError(f"Feed with URL '{normalized_payload.url}' already exists.")
 
         try:
-            return self.repository.create(payload)
+            return self.repository.create(normalized_payload)
         except IntegrityError as exc:
-            raise FeedDuplicateUrlError(f"Feed with URL '{payload.url}' already exists.") from exc
+            raise FeedDuplicateUrlError(
+                f"Feed with URL '{normalized_payload.url}' already exists."
+            ) from exc
 
     def get_by_id(self, feed_id: UUID) -> Feed:
         feed = self.repository.get_by_id(feed_id)
@@ -51,17 +54,20 @@ class FeedService:
 
     def update(self, feed_id: UUID, payload: FeedUpdate) -> Feed:
         feed = self.get_by_id(feed_id)
+        normalized_payload = self._normalize_update_payload(feed, payload)
 
-        if payload.technology_domain_id is not None:
-            self._ensure_technology_domain_exists(payload.technology_domain_id)
+        if normalized_payload.technology_domain_id is not None:
+            self._ensure_technology_domain_exists(normalized_payload.technology_domain_id)
 
-        if payload.url is not None:
-            existing = self.repository.get_by_url(str(payload.url))
+        if normalized_payload.url is not None:
+            existing = self.repository.get_by_url(str(normalized_payload.url))
             if existing is not None and existing.id != feed.id:
-                raise FeedDuplicateUrlError(f"Feed with URL '{payload.url}' already exists.")
+                raise FeedDuplicateUrlError(
+                    f"Feed with URL '{normalized_payload.url}' already exists."
+                )
 
         try:
-            return self.repository.update(feed, payload)
+            return self.repository.update(feed, normalized_payload)
         except IntegrityError as exc:
             raise FeedDuplicateUrlError("Feed URL must be unique.") from exc
 
@@ -75,4 +81,35 @@ class FeedService:
             raise FeedTechnologyDomainNotFoundError(
                 f"Technology domain with id '{technology_domain_id}' was not found."
             )
+
+    @staticmethod
+    def _normalize_create_payload(payload: FeedCreate) -> FeedCreate:
+        if payload.fetch_kind != FetchKind.CRAWL:
+            return payload.model_copy(
+                update={
+                    "crawl_depth": None,
+                    "max_new_articles_per_crawl": None,
+                }
+            )
+        return payload
+
+    @staticmethod
+    def _normalize_update_payload(feed: Feed, payload: FeedUpdate) -> FeedUpdate:
+        effective_kind = payload.fetch_kind or feed.fetch_kind
+        should_ignore_crawl_depth = (
+            effective_kind != FetchKind.CRAWL
+            and (
+                payload.fetch_kind is not None
+                or payload.crawl_depth is not None
+                or payload.max_new_articles_per_crawl is not None
+            )
+        )
+        if should_ignore_crawl_depth:
+            return payload.model_copy(
+                update={
+                    "crawl_depth": None,
+                    "max_new_articles_per_crawl": None,
+                }
+            )
+        return payload
 

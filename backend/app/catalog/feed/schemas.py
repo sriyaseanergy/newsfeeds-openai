@@ -14,6 +14,8 @@ class FeedCreate(BaseModel):
     url: HttpUrl
     is_enabled: bool = True
     fetch_kind: FetchKind = FetchKind.RSS
+    crawl_depth: int | None = Field(default=1, ge=1)
+    max_new_articles_per_crawl: int | None = Field(default=20, ge=1)
 
     @field_validator("name")
     @classmethod
@@ -33,6 +35,8 @@ class FeedUpdate(BaseModel):
     url: HttpUrl | None = None
     is_enabled: bool | None = None
     fetch_kind: FetchKind | None = None
+    crawl_depth: int | None = Field(default=None, ge=1)
+    max_new_articles_per_crawl: int | None = Field(default=None, ge=1)
 
     @field_validator("name")
     @classmethod
@@ -55,6 +59,8 @@ class FeedResponse(BaseModel):
     url: str
     is_enabled: bool
     fetch_kind: FetchKind
+    crawl_depth: int | None
+    max_new_articles_per_crawl: int | None
     created_at: datetime
     updated_at: datetime
 

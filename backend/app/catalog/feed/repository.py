@@ -11,8 +11,7 @@ class FeedRepository:
         self.db = db
 
     def create(self, payload: FeedCreate) -> Feed:
-        data = payload.model_dump()
-        data["url"] = str(payload.url)
+        data = self._to_persisted_dict(payload)
         feed = Feed(**data)
         self.db.add(feed)
         self.db.commit()
@@ -32,9 +31,7 @@ class FeedRepository:
         return list(self.db.execute(statement).scalars().all())
 
     def update(self, feed: Feed, payload: FeedUpdate) -> Feed:
-        update_data = payload.model_dump(exclude_unset=True)
-        if payload.url is not None:
-            update_data["url"] = str(payload.url)
+        update_data = self._to_persisted_dict(payload, exclude_unset=True)
 
         for field, value in update_data.items():
             setattr(feed, field, value)
@@ -46,4 +43,11 @@ class FeedRepository:
     def delete(self, feed: Feed) -> None:
         self.db.delete(feed)
         self.db.commit()
+
+    @staticmethod
+    def _to_persisted_dict(payload: FeedCreate | FeedUpdate, exclude_unset: bool = False) -> dict:
+        data = payload.model_dump(exclude_unset=exclude_unset)
+        if "url" in data and payload.url is not None:
+            data["url"] = str(payload.url)
+        return data
 
