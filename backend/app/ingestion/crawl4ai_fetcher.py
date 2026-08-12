@@ -237,6 +237,7 @@ class Crawl4AIFetcher(FeedAcquirer):
         discovered_article_candidates = self._prepare_article_candidates(
             discovered_links=discovered_links,
             seed_host=seed_host,
+            seed_url=feed.url,
         )
         discovered_count = len(discovered_article_candidates)
 
@@ -282,6 +283,7 @@ class Crawl4AIFetcher(FeedAcquirer):
                 listing_candidate=candidate,
                 crawl_result=crawl_result,
                 config=config,
+                seed_url=feed.url,
             )
             if article_data is None:
                 failed_extractions += 1
@@ -488,11 +490,18 @@ class Crawl4AIFetcher(FeedAcquirer):
         self,
         discovered_links: list[dict[str, str | datetime | None]],
         seed_host: str,
+        seed_url: str,
     ) -> list[dict[str, str | datetime | None]]:
         candidates: list[dict[str, str | datetime | None]] = []
         for item in discovered_links:
             url = str(item.get("url") or "").strip()
             if not self._is_article_url(url, seed_host):
+                continue
+            if self._is_seed_equivalent_url(url, seed_url):
+                logger.info(
+                    "Crawl candidate skipped: link resolves to feed seed URL (url=%s).",
+                    url,
+                )
                 continue
             title = self._clean_card_title(str(item.get("title") or "").strip())
             fallback = self._title_from_url(url)
@@ -550,9 +559,20 @@ class Crawl4AIFetcher(FeedAcquirer):
         listing_candidate: dict[str, str | datetime | None],
         crawl_result: Any,
         config: CrawlFetchConfig,
+        seed_url: str,
     ) -> NormalizedArticleData | None:
         url = str(listing_candidate.get("url") or "").strip()
         if not url:
+            return None
+
+        if self._is_seed_equivalent_url(url, seed_url) or any(
+            self._is_seed_equivalent_url(resolved_url, seed_url)
+            for resolved_url in self._resolved_result_urls(crawl_result)
+        ):
+            logger.info(
+                "Crawl article skipped: resolves to feed seed URL (url=%s).",
+                url,
+            )
             return None
 
         html = str(getattr(crawl_result, "html", "") or "")
@@ -721,6 +741,43 @@ class Crawl4AIFetcher(FeedAcquirer):
             seen.add(normalized)
             deduped.append(normalized)
         return deduped
+
+    @classmethod
+    def _is_seed_equivalent_url(cls, candidate_url: str, seed_url: str) -> bool:
+        candidate_identity = cls._seed_identity(candidate_url)
+        seed_identity = cls._seed_identity(seed_url)
+        return bool(
+            candidate_identity
+            and seed_identity
+            and candidate_identity == seed_identity
+        )
+
+    @staticmethod
+    def _seed_identity(url: str) -> str:
+        parsed = urlparse(str(url or "").strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return ""
+
+        host = parsed.netloc.lower()
+        for default_port in (":80", ":443"):
+            if host.endswith(default_port):
+                host = host[: -len(default_port)]
+        if host.startswith("www."):
+            host = host[4:]
+
+        # Query and fragment are dropped so tracking/pagination/anchor variants of
+        # the listing page cannot re-enter acquisition as distinct "articles".
+        path = re.sub(r"/+$", "", parsed.path.lower())
+        return f"{host}{path or '/'}"
+
+    @staticmethod
+    def _resolved_result_urls(crawl_result: Any) -> list[str]:
+        resolved: list[str] = []
+        for attr in ("redirected_url", "final_url", "url"):
+            value = getattr(crawl_result, attr, None)
+            if isinstance(value, str) and value.strip():
+                resolved.append(value.strip())
+        return resolved
 
     @staticmethod
     def _is_same_host(base_url: str, candidate_url: str) -> bool:
