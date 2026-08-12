@@ -22,9 +22,14 @@ from app.catalog.feed.repository import FeedRepository
 from app.core.settings import get_settings
 from app.editorial.candidate_filter.enums import CandidateDecision
 from app.editorial.candidate_filter.service import CandidateFilterService
-from app.editorial.classification.models import ClassificationInput, EditorialClassification
+from app.editorial.classification.models import (
+    ClassificationBatchItem,
+    ClassificationInput,
+    EditorialClassification,
+)
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
 from app.editorial.decision import (
+    AIEditorialDecisionPolicy,
     DecisionDiagnostics,
     EditorialDecision,
     EditorialDecisionEngine,
@@ -51,6 +56,17 @@ class RunnerStats:
     enrichments_completed: int = 0
     decisions_made: int = 0
     failures: int = 0
+
+
+@dataclass
+class PendingEvaluation:
+    article_id: str
+    feed: Feed
+    article_data: NormalizedArticleData
+    article: Article
+    article_index: int
+    classification_input: ClassificationInput
+
 
 class NewsletterCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -120,15 +136,19 @@ def main() -> None:
     candidate_filter = CandidateFilterService()
     classification_provider = OpenAIClassificationProvider(settings=settings)
     enrichment_provider = OpenAIEditorialEnrichmentProvider(settings=settings)
-    decision_engine = EditorialDecisionEngine()
+    decision_engine = EditorialDecisionEngine(policy=AIEditorialDecisionPolicy())
     card_generator = NewsletterCardGenerator()
     acquisition_factory = AcquisitionFactory()
+    pending_evaluations: list[PendingEvaluation] = []
+    article_seq = 0
 
     print("=" * 88)
     print("Developer Editorial Evaluation Runner")
     print("=" * 88)
     print(f"Max feeds              : {args.max_feeds}")
     print(f"Max articles per feed  : {args.max_articles_per_feed}")
+    print("Decision policy        : AIEditorialDecisionPolicy")
+    print(f"Classification batch   : {settings.classification_batch_size}")
     print("=" * 88)
     print()
 
@@ -139,7 +159,7 @@ def main() -> None:
         if not feeds:
             print("No enabled feeds available.")
             print()
-            _print_summary(stats, run_started)
+            _print_summary(stats=stats, run_started=run_started)
             return
 
         for feed in feeds:
@@ -202,98 +222,168 @@ def main() -> None:
                     print()
                     continue
 
-                classification_input = _to_classification_input(feed, article)
-                try:
-                    classification = classification_provider.classify(classification_input)
-                    stats.classifications_completed += 1
-                    _print_classification(classification)
-                except Exception as exc:
-                    stats.failures += 1
-                    print(f"    Classification Failed: {exc}")
-                    logger.exception(
-                        "Classification failed (feed_id=%s url=%s).",
-                        feed.id,
-                        article_data.url,
-                    )
-                    print()
-                    continue
-
-                try:
-                    decision = decision_engine.decide(classification)
-                    stats.decisions_made += 1
-                    _print_decision(decision, phase="pre-enrichment")
-                    diagnostics = decision_engine.build_diagnostics(
-                        classification=classification,
-                        decision=decision,
-                    )
-                    _print_decision_diagnostics(diagnostics)
-                except Exception as exc:
-                    stats.failures += 1
-                    print(f"    Decision Engine Failed: {exc}")
-                    logger.exception(
-                        "Decision engine failed (feed_id=%s url=%s).",
-                        feed.id,
-                        article_data.url,
-                    )
-                    print()
-                    continue
-
-                if not decision.include_in_newsletter:
-                    print(
-                        "    Enrichment: skipped intentionally "
-                        "(decision include=False)"
-                    )
-                    print(
-                        "    Newsletter Card: skipped intentionally "
-                        "(decision include=False)"
-                    )
-                    print()
-                    continue
-
-                try:
-                    enrichment = enrichment_provider.enrich(
-                        article=article_data,
-                        classification=classification,
-                    )
-                    stats.enrichments_completed += 1
-                    _print_enrichment(enrichment)
-                except Exception as exc:
-                    stats.failures += 1
-                    print(f"    Enrichment Failed: {exc}")
-                    logger.exception(
-                        "Enrichment failed (feed_id=%s url=%s).",
-                        feed.id,
-                        article_data.url,
-                    )
-                    print()
-                    continue
-
-                decision = decision_engine.finalize_with_enrichment(decision, enrichment)
-                _print_decision(decision, phase="final")
-
-                try:
-                    card = card_generator.generate(
+                article_seq += 1
+                article_id = f"eval_{article_seq}"
+                pending_evaluations.append(
+                    PendingEvaluation(
+                        article_id=article_id,
                         feed=feed,
-                        article=article_data,
-                        classification=classification,
-                        enrichment=enrichment,
-                        decision=decision,
+                        article_data=article_data,
+                        article=article,
+                        article_index=idx,
+                        classification_input=_to_classification_input(feed, article),
                     )
-                    _print_newsletter_card(card)
-                except Exception as exc:
-                    stats.failures += 1
-                    print(f"    Newsletter Card Failed: {exc}")
-                    logger.exception(
-                        "Card generation failed (feed_id=%s url=%s).",
-                        feed.id,
-                        article_data.url,
-                    )
-
+                )
+                print(
+                    f"    Classification: queued for domain-batch "
+                    f"(id={article_id}, domain="
+                    f"{feed.technology_domain.name if feed.technology_domain else 'UNKNOWN'})"
+                )
                 print()
 
             print()
 
-    _print_summary(stats, run_started)
+        classifications_by_id: dict[str, EditorialClassification] = {}
+        if pending_evaluations:
+            print("=" * 88)
+            print(
+                f"Running domain-grouped batch classification "
+                f"({len(pending_evaluations)} articles, "
+                f"batch_size={settings.classification_batch_size})"
+            )
+            print("=" * 88)
+            print()
+            try:
+                batch_items = [
+                    ClassificationBatchItem(
+                        article_id=item.article_id,
+                        classification_input=item.classification_input,
+                    )
+                    for item in pending_evaluations
+                ]
+                classifications_by_id = classification_provider.classify_many(batch_items)
+            except Exception as exc:
+                stats.failures += len(pending_evaluations)
+                print(f"Batch classification failed: {exc}")
+                logger.exception("Batch classification failed for evaluation run.")
+                _print_summary(stats=stats, run_started=run_started)
+                return
+
+        current_feed_id = None
+        for pending in pending_evaluations:
+            feed = pending.feed
+            article_data = pending.article_data
+
+            if current_feed_id != feed.id:
+                if current_feed_id is not None:
+                    print()
+                current_feed_id = feed.id
+                print(
+                    f"Feed decisions: {feed.name} | kind={feed.fetch_kind}"
+                )
+
+            print(
+                f"  Article #{pending.article_index}: {article_data.title}"
+            )
+            print(f"    URL: {article_data.url}")
+
+            classification = classifications_by_id.get(pending.article_id)
+            if classification is None:
+                stats.failures += 1
+                print(
+                    f"    Classification Failed: missing result "
+                    f"for {pending.article_id}"
+                )
+                logger.error(
+                    "Classification missing after batch "
+                    "(article_id=%s feed_id=%s url=%s).",
+                    pending.article_id,
+                    feed.id,
+                    article_data.url,
+                )
+                print()
+                continue
+
+            stats.classifications_completed += 1
+            _print_classification(classification)
+
+            try:
+                decision = decision_engine.decide(classification)
+                diagnostics = decision_engine.build_diagnostics(
+                    classification=classification,
+                    decision=decision,
+                )
+                _print_decision(decision, phase="pre-enrichment")
+                _print_decision_diagnostics(diagnostics)
+                stats.decisions_made += 1
+            except Exception as exc:
+                stats.failures += 1
+                print(f"    Decision Engine Failed: {exc}")
+                logger.exception(
+                    "Decision engine failed (feed_id=%s url=%s).",
+                    feed.id,
+                    article_data.url,
+                )
+                print()
+                continue
+
+            if not decision.include_in_newsletter:
+                print(
+                    "    Enrichment: skipped intentionally "
+                    "(decision include=False)"
+                )
+                print(
+                    "    Newsletter Card: skipped intentionally "
+                    "(decision include=False)"
+                )
+                print()
+                continue
+
+            try:
+                enrichment = enrichment_provider.enrich(
+                    article=article_data,
+                    classification=classification,
+                )
+                stats.enrichments_completed += 1
+                _print_enrichment(enrichment)
+            except Exception as exc:
+                stats.failures += 1
+                print(f"    Enrichment Failed: {exc}")
+                logger.exception(
+                    "Enrichment failed (feed_id=%s url=%s).",
+                    feed.id,
+                    article_data.url,
+                )
+                print()
+                continue
+
+            decision = decision_engine.finalize_with_enrichment(decision, enrichment)
+            _print_decision(decision, phase="final")
+
+            try:
+                card = card_generator.generate(
+                    feed=feed,
+                    article=article_data,
+                    classification=classification,
+                    enrichment=enrichment,
+                    decision=decision,
+                )
+                _print_newsletter_card(card)
+            except Exception as exc:
+                stats.failures += 1
+                print(f"    Newsletter Card Failed: {exc}")
+                logger.exception(
+                    "Card generation failed (feed_id=%s url=%s).",
+                    feed.id,
+                    article_data.url,
+                )
+
+            print()
+
+        if pending_evaluations:
+            print()
+
+    _print_summary(stats=stats, run_started=run_started)
 
 
 def _select_enabled_feeds(feeds: Iterable[Feed], max_feeds: int) -> list[Feed]:

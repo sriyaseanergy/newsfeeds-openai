@@ -63,7 +63,7 @@ class PromptFactory:
         cls,
         technology_domain: TechnologyDomain,
     ) -> PromptBuilder:
-        domain_name = technology_domain.name.strip().upper()
+        domain_name = cls._normalize_domain_key(technology_domain.name)
         builder = cls._PROMPT_BUILDERS.get(domain_name)
         if builder is not None:
             return builder
@@ -79,7 +79,7 @@ class PromptFactory:
         cls,
         technology_domain: TechnologyDomain,
     ) -> str:
-        domain_name = technology_domain.name.strip().upper()
+        domain_name = cls._normalize_domain_key(technology_domain.name)
         instructions = cls._DOMAIN_INSTRUCTIONS.get(domain_name)
         if instructions is not None:
             return instructions
@@ -89,3 +89,11 @@ class PromptFactory:
             technology_domain.name,
         )
         return cls._DOMAIN_INSTRUCTIONS["AI"]
+
+    @staticmethod
+    def _normalize_domain_key(name: str) -> str:
+        # DB names like "Expert Context" must match registry keys like "EXPERT_CONTEXT".
+        return " ".join(name.strip().upper().replace("_", " ").split()).replace(
+            " ",
+            "_",
+        )
