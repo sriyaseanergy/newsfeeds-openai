@@ -7,6 +7,7 @@ from app.editorial.classification.enums import (
     Severity,
 )
 from app.editorial.classification.models import (
+    ClassificationBatchItem,
     ClassificationInput,
     EditorialClassification,
 )
@@ -18,6 +19,21 @@ class ClassificationProvider(ABC):
         self, classification_input: ClassificationInput
     ) -> EditorialClassification:
         raise NotImplementedError
+
+    def classify_many(
+        self,
+        items: list[ClassificationBatchItem],
+    ) -> dict[str, EditorialClassification]:
+        """
+        Classify multiple articles.
+
+        Default implementation preserves one-call-per-article behavior.
+        Providers may override this with domain-grouped batching.
+        """
+        return {
+            item.article_id: self.classify(item.classification_input)
+            for item in items
+        }
 
 
 class MockClassificationProvider(ClassificationProvider):

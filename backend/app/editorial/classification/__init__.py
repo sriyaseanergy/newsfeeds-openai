@@ -5,6 +5,9 @@ from app.editorial.classification.enums import (
     Severity,
 )
 from app.editorial.classification.models import (
+    BatchedArticleClassification,
+    BatchedClassificationResponse,
+    ClassificationBatchItem,
     ClassificationInput,
     EditorialClassification,
 )
@@ -20,6 +23,9 @@ __all__ = [
     "Actionability",
     "ArticleType",
     "Audience",
+    "BatchedArticleClassification",
+    "BatchedClassificationResponse",
+    "ClassificationBatchItem",
     "ClassificationInput",
     "ClassificationProvider",
     "ClassificationService",

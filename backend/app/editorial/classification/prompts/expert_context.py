@@ -4,11 +4,7 @@ from app.editorial.classification.prompts import (
     build_prompt_messages,
 )
 
-
-def build_expert_context_prompt_messages(
-    classification_input: ClassificationInput,
-) -> list[PromptMessage]:
-    domain_instructions = """
+EXPERT_CONTEXT_DOMAIN_INSTRUCTIONS = """
 Domain focus: Expert Context editorial classification.
 
 Recognize and classify content such as:
@@ -30,4 +26,11 @@ Remember:
 - no publication decision
 """.strip()
 
-    return build_prompt_messages(classification_input, domain_instructions)
+
+def build_expert_context_prompt_messages(
+    classification_input: ClassificationInput,
+) -> list[PromptMessage]:
+    return build_prompt_messages(
+        classification_input,
+        EXPERT_CONTEXT_DOMAIN_INSTRUCTIONS,
+    )

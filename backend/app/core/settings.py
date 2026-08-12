@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     openai_classification_model: str = "gpt-5-nano"
     openai_enrichment_model: str = "gpt-5-mini"
     openai_base_url: str | None = None
+    classification_batch_size: int = 15
 
     # Microsoft Graph email settings.
     azure_tenant_id: str = ""

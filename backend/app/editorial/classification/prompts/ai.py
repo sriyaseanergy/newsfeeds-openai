@@ -4,9 +4,7 @@ from app.editorial.classification.prompts import (
     build_prompt_messages,
 )
 
-
-def build_ai_prompt_messages(classification_input: ClassificationInput) -> list[PromptMessage]:
-    domain_instructions = """
+AI_DOMAIN_INSTRUCTIONS = """
 Domain focus: AI and Machine Learning editorial classification.
 
 Recognize and classify concepts such as:
@@ -23,5 +21,6 @@ Remember:
 - no publication decision
 """.strip()
 
-    return build_prompt_messages(classification_input, domain_instructions)
 
+def build_ai_prompt_messages(classification_input: ClassificationInput) -> list[PromptMessage]:
+    return build_prompt_messages(classification_input, AI_DOMAIN_INSTRUCTIONS)

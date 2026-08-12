@@ -61,6 +61,17 @@ Return data matching this contract:
 """.strip()
 
 
+BATCH_SYSTEM_ADDENDUM = """
+Batch classification mode:
+- You will receive multiple articles in one request.
+- Classify each article independently using only that article's supplied text.
+- Do not compare articles or transfer evidence across articles.
+- Return one classification object for every provided article_id.
+- Every returned object must include article_id exactly as provided.
+- Do not omit any article_id from the response.
+""".strip()
+
+
 def format_classification_input(classification_input: ClassificationInput) -> str:
     summary = classification_input.summary or ""
     content = classification_input.content or ""
@@ -74,6 +85,21 @@ def format_classification_input(classification_input: ClassificationInput) -> st
     )
 
 
+def format_batch_classification_input(
+    articles: list[tuple[str, ClassificationInput]],
+) -> str:
+    sections: list[str] = [
+        f"Classify the following {len(articles)} articles.",
+        "Return one classification for each article_id listed below.",
+        "",
+    ]
+    for article_id, classification_input in articles:
+        sections.append(f"=== Article ID: {article_id} ===")
+        sections.append(format_classification_input(classification_input))
+        sections.append("")
+    return "\n".join(sections).strip()
+
+
 def build_prompt_messages(
     classification_input: ClassificationInput,
     domain_instructions: str,
@@ -84,3 +110,17 @@ def build_prompt_messages(
         {"role": "user", "content": format_classification_input(classification_input)},
     ]
 
+
+def build_batch_prompt_messages(
+    articles: list[tuple[str, ClassificationInput]],
+    domain_instructions: str,
+) -> list[PromptMessage]:
+    system_content = (
+        f"{COMMON_SYSTEM_INSTRUCTIONS}\n\n"
+        f"{domain_instructions.strip()}\n\n"
+        f"{BATCH_SYSTEM_ADDENDUM}"
+    )
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": format_batch_classification_input(articles)},
+    ]
