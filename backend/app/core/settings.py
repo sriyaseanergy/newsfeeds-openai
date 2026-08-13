@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,8 @@ class Settings(BaseSettings):
 
     app_name: str = "Editorial Intelligence Platform"
     app_version: str = "0.1.0"
+
+    root_path: str = ""
 
     database_url: str = ""
 
@@ -40,6 +43,16 @@ class Settings(BaseSettings):
     mywork_email_column: str = "Email"
     mywork_designation_column: str = "Designation"
     mywork_last_day_column: str = "LastDay"
+
+    @field_validator("root_path", mode="before")
+    @classmethod
+    def normalize_root_path(cls, value: object) -> str:
+        if value is None:
+            return ""
+        normalized = str(value).strip()
+        if not normalized or normalized == "/":
+            return ""
+        return f"/{normalized.strip('/')}"
 
     @property
     def openai_model(self) -> str:

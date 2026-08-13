@@ -10,6 +10,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
+    root_path=settings.root_path,
 )
 
 app.include_router(api_router)
