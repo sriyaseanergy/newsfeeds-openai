@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from app.scheduling.ist_schedule import parse_ist_time_of_day, parse_weekly_digest_day
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,6 +25,12 @@ class Settings(BaseSettings):
     openai_enrichment_model: str = "gpt-5-mini"
     openai_base_url: str | None = None
     classification_batch_size: int = 15
+
+    # Newsletter digest scheduler (IST / Asia/Kolkata).
+    daily_digest_time: str = "08:00"
+    weekly_digest_day: str = "Friday"
+    weekly_digest_time: str = "08:00"
+    scheduler_enabled: bool = True
 
     # Microsoft Graph email settings.
     azure_tenant_id: str = ""
@@ -53,6 +60,38 @@ class Settings(BaseSettings):
         if not normalized or normalized == "/":
             return ""
         return f"/{normalized.strip('/')}"
+
+    @field_validator("daily_digest_time", "weekly_digest_time", mode="before")
+    @classmethod
+    def normalize_digest_time(cls, value: object) -> str:
+        if value is None:
+            return "08:00"
+        normalized = str(value).strip()
+        if not normalized:
+            return "08:00"
+        return normalized
+
+    @field_validator("weekly_digest_day", mode="before")
+    @classmethod
+    def normalize_weekly_digest_day(cls, value: object) -> str:
+        if value is None:
+            return "Friday"
+        normalized = str(value).strip()
+        if not normalized:
+            return "Friday"
+        return normalized.title()
+
+    @field_validator("daily_digest_time", "weekly_digest_time", mode="after")
+    @classmethod
+    def validate_digest_time(cls, value: str, info) -> str:
+        parse_ist_time_of_day(value, field_name=str(info.field_name))
+        return value
+
+    @field_validator("weekly_digest_day", mode="after")
+    @classmethod
+    def validate_weekly_digest_day(cls, value: str) -> str:
+        parse_weekly_digest_day(value)
+        return value
 
     @property
     def openai_model(self) -> str:
