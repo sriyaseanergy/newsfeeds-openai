@@ -1,6 +1,13 @@
 from functools import lru_cache
+from pathlib import Path
 
+from dotenv import find_dotenv, load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_FILE = find_dotenv(usecwd=True) or str(
+    Path(__file__).resolve().parents[3] / ".env"
+)
+load_dotenv(_ENV_FILE)
 
 
 class Settings(BaseSettings):
@@ -38,7 +45,7 @@ class Settings(BaseSettings):
         return self.openai_classification_model
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         extra="ignore",
     )
 
@@ -46,4 +53,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

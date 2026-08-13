@@ -73,7 +73,9 @@ class GraphClient:
         expires_in = int(token_result.get("expires_in", 3600))
         self._access_token = access_token
         self._expires_at = now + expires_in
-        logger.info("Microsoft Graph access token acquired (expires_in=%ss).", expires_in)
+        logger.info(
+            "Microsoft Graph access token acquired (expires_in=%ss).", expires_in
+        )
         return access_token
 
     def send_request(
@@ -116,7 +118,9 @@ class GraphClient:
                 logger.exception(
                     "Microsoft Graph request failed before receiving response."
                 )
-                raise EmailSendError("Failed to send request to Microsoft Graph.") from exc
+                raise EmailSendError(
+                    "Failed to send request to Microsoft Graph."
+                ) from exc
 
             if response.status_code == 429:
                 retry_after_header = response.headers.get("Retry-After")
@@ -164,3 +168,41 @@ class GraphClient:
                 attempt,
             )
             return response
+
+
+def send_test_email(
+    recipient: str,
+    *,
+    subject: str = "Graph API Test Email",
+) -> None:
+    """Send a test email via Microsoft Graph using configured app credentials."""
+    from app.notifications.email.service import EmailService
+
+    service = EmailService()
+    service.send_email(
+        subject=subject,
+        html_body="<p>This is a Microsoft Graph API test email.</p>",
+        recipients=[recipient],
+    )
+
+
+if __name__ == "__main__":
+    import logging
+    import os
+    import sys
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+
+    recipient = os.getenv("GRAPH_TEST_RECIPIENT", "").strip()
+    if not recipient:
+        print(
+            "Missing recipient. Set GRAPH_TEST_RECIPIENT env var.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    send_test_email(recipient)
+    print("Test email sent successfully.")
