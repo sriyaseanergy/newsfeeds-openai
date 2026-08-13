@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     graph_sender_email: str = ""
     graph_timeout_seconds: int = 30
 
+    # Azure AD SPA authentication (ID token audience validation).
+    azure_auth_client_id: str = ""
+
+    # MyWork employee database (separate from application PostgreSQL).
+    mywork_database_url: str = ""
+    mywork_employee_table: str = "Employee"
+    mywork_emp_no_column: str = "EmpNo"
+    mywork_name_column: str = "Name"
+    mywork_email_column: str = "Email"
+    mywork_designation_column: str = "Designation"
+    mywork_last_day_column: str = "LastDay"
+
     @property
     def openai_model(self) -> str:
         """

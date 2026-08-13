@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.api.auth.authorization import require_feed_source_manager
 from app.catalog.feed.repository import FeedRepository
 from app.catalog.feed.schemas import FeedCreate, FeedResponse, FeedUpdate
 from app.catalog.feed.service import (
@@ -10,6 +11,7 @@ from app.catalog.feed.service import (
 )
 from app.catalog.technology_domain.repository import TechnologyDomainRepository
 from app.infrastructure.database.session import get_db
+from app.infrastructure.employee_database.repository import EmployeeRecord
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,7 @@ def get_feed_service(db: Session = Depends(get_db)) -> FeedService:
 @router.post("", response_model=FeedResponse, status_code=status.HTTP_201_CREATED)
 def create_feed(
     payload: FeedCreate,
+    _employee: EmployeeRecord = Depends(require_feed_source_manager),
     service: FeedService = Depends(get_feed_service),
 ) -> FeedResponse:
     try:
@@ -52,6 +55,7 @@ def get_feed(feed_id: UUID, service: FeedService = Depends(get_feed_service)) ->
 def update_feed(
     feed_id: UUID,
     payload: FeedUpdate,
+    _employee: EmployeeRecord = Depends(require_feed_source_manager),
     service: FeedService = Depends(get_feed_service),
 ) -> FeedResponse:
     try:
@@ -65,7 +69,11 @@ def update_feed(
 
 
 @router.delete("/{feed_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_feed(feed_id: UUID, service: FeedService = Depends(get_feed_service)) -> Response:
+def delete_feed(
+    feed_id: UUID,
+    _employee: EmployeeRecord = Depends(require_feed_source_manager),
+    service: FeedService = Depends(get_feed_service),
+) -> Response:
     try:
         service.delete(feed_id)
     except FeedNotFoundError as exc:

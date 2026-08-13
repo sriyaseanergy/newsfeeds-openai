@@ -49,3 +49,31 @@ export function getMsalInstance() {
 export const loginRequest = {
   scopes: ['openid', 'profile', 'email'],
 }
+
+/** Restore MSAL active account from cache (needed after page reload). */
+export async function ensureMsalAccount() {
+  const msal = getMsalInstance()
+  await msal.initialize()
+  const active = msal.getActiveAccount()
+  if (active) return active
+  const accounts = msal.getAllAccounts()
+  if (!accounts.length) return null
+  msal.setActiveAccount(accounts[0])
+  return accounts[0]
+}
+
+/** Acquire a fresh Azure AD ID token for backend Bearer auth. Returns null when unauthenticated. */
+export async function acquireAuthToken() {
+  try {
+    const account = await ensureMsalAccount()
+    if (!account) return null
+    const msal = getMsalInstance()
+    const result = await msal.acquireTokenSilent({
+      ...loginRequest,
+      account,
+    })
+    return result.idToken || null
+  } catch {
+    return null
+  }
+}
