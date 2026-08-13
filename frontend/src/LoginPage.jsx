@@ -70,6 +70,9 @@ export default function LoginPage({ onSignedIn }) {
         redirectUri: getMsalRedirectUri(),
         prompt: 'select_account',
       })
+      if (res.account) {
+        msal.setActiveAccount(res.account)
+      }
       const idToken = res.idToken
       if (!idToken) {
         setError('Sign-in did not return an ID token. Check the app registration (SPA) and scopes.')

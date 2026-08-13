@@ -7,9 +7,8 @@ import {
     IconFeedHealth, IconSettings, IconPerson, IconLogout,
     IconChevronRight, IconChevronLeft, IconSecurity, IconEngineering, IconPsychology, IconLightbulb, IconArticle, IconHome,
 } from './components/layout/LayoutIcons.jsx'
-// Login page flow is temporarily disabled to unblock other screen changes.
-// import LoginPage, { clearStoredEmployee, readStoredEmployee } from './LoginPage.jsx'
-// import { getMsalInstance, getMsalRedirectUri } from './msalInstance.js'
+import LoginPage, { clearStoredEmployee, readStoredEmployee } from './LoginPage.jsx'
+import { getMsalInstance, getMsalRedirectUri, acquireAuthToken, ensureMsalAccount } from './msalInstance.js'
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
@@ -31,7 +30,12 @@ const API = {
 }
 
 async function apiFetch(url, opts = {}) {
-    const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts })
+    const token = await acquireAuthToken()
+    const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) }
+    if (token) {
+        headers.Authorization = `Bearer ${token}`
+    }
+    const r = await fetch(url, { headers, ...opts })
     if (!r.ok) {
         let detail = ''
         try {
@@ -127,11 +131,6 @@ const FOOTER_HEIGHT = LAYOUT.footerHeight
 // ─── Category config ──────────────────────────────────────────────────────────
 
 const DEFAULT_TECHNOLOGY_DOMAINS = ['AI', 'Expert Context']
-const DEV_BYPASS_SESSION = {
-    name: 'Frontend Dev User',
-    email: 'frontend.dev@local',
-    designation: 'super admin',
-}
 
 const CAT_DESC = {
     AI: 'Artificial Intelligence, LLMs, Generative AI, AI tooling',
@@ -266,11 +265,11 @@ function SidebarMenuItem(props) {
     )
 }
 
-function Sidebar({ articles, feeds, technologyDomains, selectedCat, onSelectCat, activeView, onView, collapsed }) {
+function Sidebar({ articles, feeds, technologyDomains, selectedCat, onSelectCat, activeView, onView, collapsed, showSettings }) {
     const categories = technologyDomainNames(technologyDomains)
     const bottomItems = [
         { id: 'feedhealth', Icon: IconFeedHealth, label: 'Feed Health' },
-        { id: 'settings',   Icon: IconSettings,   label: 'Settings'   },
+        ...(showSettings ? [{ id: 'settings', Icon: IconSettings, label: 'Settings' }] : []),
     ]
 
     return (
@@ -1346,8 +1345,7 @@ function RightPanel({ statusData, feedHealth, recipients, apiError, fetched, onC
 // ─── Root app ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-    // const [sessionEmployee, setSessionEmployee] = useState(() => readStoredEmployee())
-    const [sessionEmployee] = useState(() => DEV_BYPASS_SESSION)
+    const [sessionEmployee, setSessionEmployee] = useState(() => readStoredEmployee())
     const [statusData,    setStatusData]    = useState(null)
     const [feeds,         setFeeds]         = useState([])
     const [technologyDomains, setTechnologyDomains] = useState([])
@@ -1405,6 +1403,11 @@ export default function App() {
     }, [scheduleRightPanelAutoClose])
 
     useEffect(() => {
+        if (!sessionEmployee) return
+        ensureMsalAccount().catch(() => {})
+    }, [sessionEmployee])
+
+    useEffect(() => {
         const theme = darkMode ? 'dark' : 'light'
         document.documentElement.setAttribute('data-theme', theme)
         localStorage.setItem(THEME_STORAGE_KEY, theme)
@@ -1415,18 +1418,17 @@ export default function App() {
         return clearRightPanelTimers
     }, [scheduleRightPanelAutoClose, clearRightPanelTimers])
 
-    // const handleLogout = useCallback(async () => {
-    //     clearStoredEmployee()
-    //     setSessionEmployee(null)
-    //     try {
-    //         const msal = getMsalInstance()
-    //         await msal.initialize()
-    //         await msal.logoutPopup({ postLogoutRedirectUri: getMsalRedirectUri() })
-    //     } catch {
-    //         /* ignore */
-    //     }
-    // }, [])
-    const handleLogout = useCallback(() => {}, [])
+    const handleLogout = useCallback(async () => {
+        clearStoredEmployee()
+        setSessionEmployee(null)
+        try {
+            const msal = getMsalInstance()
+            await msal.initialize()
+            await msal.logoutPopup({ postLogoutRedirectUri: getMsalRedirectUri() })
+        } catch {
+            /* ignore */
+        }
+    }, [])
 
     const fetchStatus = useCallback(async () => {
         // Suspend API call until backend status logging is implemented
@@ -1485,14 +1487,23 @@ export default function App() {
     }, [technologyDomains, selectedCat])
 
     const handleView = view => {
+        if (view === 'settings' && !canManageFeedSources(sessionEmployee)) return
         setActiveView(view)
         if (view === 'feedhealth') fetchFeedHealth()
         if (view === 'settings')  { fetchFeeds(); fetchTechnologyDomains(); fetchRecipients() }
     }
 
-    // if (!sessionEmployee) {
-    //     return <LoginPage onSignedIn={setSessionEmployee} />
-    // }
+    const canManageSettings = canManageFeedSources(sessionEmployee)
+
+    useEffect(() => {
+        if (!canManageSettings && activeView === 'settings') {
+            setActiveView('articles')
+        }
+    }, [canManageSettings, activeView])
+
+    if (!sessionEmployee) {
+        return <LoginPage onSignedIn={setSessionEmployee} />
+    }
 
     return (
         <div className="fa-app" data-theme={darkMode ? 'dark' : 'light'}>
@@ -1527,6 +1538,7 @@ export default function App() {
                     activeView={activeView}
                     onView={handleView}
                     collapsed={drawerCollapsed}
+                    showSettings={canManageSettings}
                 />
 
                 <div className="fa-main">
@@ -1559,7 +1571,7 @@ export default function App() {
                             />
                         )}
 
-                        {activeView === 'settings' && (
+                        {activeView === 'settings' && canManageSettings && (
                             <SettingsView
                                 feeds={feeds}
                                 technologyDomains={technologyDomains}
