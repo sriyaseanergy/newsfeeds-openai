@@ -108,11 +108,6 @@ export default function LoginPage({ onSignedIn }) {
             ? data.detail
             : data.detail?.[0]?.msg || `${r.status} ${r.statusText}`
         setError(msg || 'Sign-in failed')
-        try {
-          await msal.logoutPopup({ postLogoutRedirectUri: getMsalRedirectUri() })
-        } catch {
-          /* ignore */
-        }
         return
       }
       if (!data.employee) {

@@ -24,17 +24,20 @@ export function getMsalRedirectUri() {
 }
 
 let _instance
+let _instanceConfigKey = ''
 
-/** Singleton MSAL client (lazy). */
+/** Singleton MSAL client (lazy). Recreated when tenant/client env changes. */
 export function getMsalInstance() {
-  if (_instance) return _instance
   const tid = tenantId()
   const cid = clientId()
+  const configKey = `${tid}|${cid}`
+  if (_instance && _instanceConfigKey === configKey) return _instance
   if (!tid || !cid) {
     throw new Error(
       'Missing Azure AD config: set VITE_AZURE_TENANT_ID and VITE_AZURE_CLIENT_ID in frontend/.env'
     )
   }
+  _instanceConfigKey = configKey
   _instance = new PublicClientApplication({
     auth: {
       clientId: cid,

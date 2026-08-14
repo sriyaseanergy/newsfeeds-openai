@@ -12,6 +12,10 @@ logger = get_logger(__name__)
 class EmailService:
     """
     Reusable email service backed by Microsoft Graph sendMail.
+
+    Sends from GRAPH_SENDER_EMAIL via POST /users/{sender}/sendMail.
+    The delegated Graph user must already be allowed to send as that
+    mailbox. This does not use /me/sendMail and is not employee SPA login.
     """
 
     def __init__(

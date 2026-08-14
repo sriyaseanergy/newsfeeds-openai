@@ -3,7 +3,10 @@ from __future__ import annotations
 import jwt
 from app.api.auth.exceptions import InvalidIdTokenError, MissingEmailClaimError
 from app.core.settings import Settings
+from app.infrastructure.logging import get_logger
 from jwt import PyJWKClient
+
+logger = get_logger(__name__)
 
 
 class AzureAdIdTokenValidator:
@@ -45,6 +48,22 @@ class AzureAdIdTokenValidator:
                 options={"require": ["exp", "iss", "aud"]},
             )
         except jwt.PyJWTError as exc:
+            try:
+                unverified = jwt.decode(
+                    id_token,
+                    options={"verify_signature": False},
+                )
+                logger.warning(
+                    "Azure AD ID token validation failed (%s). "
+                    "token aud=%r iss=%r expected_aud=%r expected_iss=%s",
+                    exc,
+                    unverified.get("aud"),
+                    unverified.get("iss"),
+                    self._client_id,
+                    self._issuers,
+                )
+            except jwt.PyJWTError:
+                logger.warning("Azure AD ID token validation failed (%s).", exc)
             raise InvalidIdTokenError(str(exc)) from exc
 
     def extract_email(self, claims: dict[str, object]) -> str:

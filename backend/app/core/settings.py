@@ -32,15 +32,25 @@ class Settings(BaseSettings):
     weekly_digest_time: str = "08:00"
     scheduler_enabled: bool = True
 
-    # Microsoft Graph email settings.
+    # Employee SPA authentication (MyWork login). Completely separate from
+    # Graph newsletter sending. SPA -> Azure AD ID token -> MyWork lookup.
+    # Env: AZURE_TENANT_ID, AZURE_AUTH_CLIENT_ID
     azure_tenant_id: str = ""
+    azure_auth_client_id: str = ""
+
+    # Microsoft Graph delegated Mail.Send for newsletters.
+    # News Feeds backend -> delegated MSAL token -> Graph Mail.Send
+    # -> GRAPH_SENDER_EMAIL (e.g. broadcast@seanergy.ai).
+    # Uses AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET.
+    # The Azure app is a confidential client, so device-code token
+    # exchange must include the secret (AADSTS7000218 otherwise).
+    # Do not reuse AZURE_AUTH_CLIENT_ID (that is employee SPA login only).
     azure_client_id: str = ""
     azure_client_secret: str = ""
     graph_sender_email: str = ""
     graph_timeout_seconds: int = 30
-
-    # Azure AD SPA authentication (ID token audience validation).
-    azure_auth_client_id: str = ""
+    redirect_uri: str = ""   # env: REDIRECT_URI
+    graph_token_cache_path: str = "data/config/graph_msal_token_cache.bin"
 
     # MyWork employee database (separate from application PostgreSQL).
     mywork_database_url: str = ""
@@ -60,6 +70,20 @@ class Settings(BaseSettings):
         if not normalized or normalized == "/":
             return ""
         return f"/{normalized.strip('/')}"
+
+    @field_validator(
+        "azure_tenant_id",
+        "azure_client_id",
+        "azure_client_secret",
+        "azure_auth_client_id",
+        "graph_sender_email",
+        mode="before",
+    )
+    @classmethod
+    def strip_quoted_env_value(cls, value: object) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().strip('"').strip("'")
 
     @field_validator("daily_digest_time", "weekly_digest_time", mode="before")
     @classmethod
