@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import seanergyIcon from './assets/seanergy-icon.png'
 import { getMsalInstance, getMsalRedirectUri, loginRequest } from './msalInstance'
 
 const SESSION_KEY = 'feed_alerts_engine_employee_session'
@@ -23,15 +24,20 @@ export function clearStoredEmployee() {
 }
 
 const C = {
-  pageBg: '#0e1015',
-  panelBg: '#0a0b0e',
-  border: 'rgba(255,255,255,0.07)',
-  text: '#e2e4f0',
-  muted: 'rgba(255,255,255,0.45)',
-  accent: '#4f5fff',
-  accentBg: 'rgba(79,95,255,0.15)',
-  accentText: '#a0a8ff',
-  red: '#f87171',
+  pageBg: '#f5f6f6',
+  cardBg: '#ffffff',
+  border: '#dedede',
+  text: '#1a1a1a',
+  muted: '#6b7280',
+  subtitle: '#9ca3af',
+  accentGreen: '#318524',
+  buttonBorder: '#d9d9d9',
+  red: '#dc2626',
+  redBg: '#fef2f2',
+  redBorder: '#fecaca',
+  warnBg: '#fffbeb',
+  warnBorder: '#fde68a',
+  warnText: '#92400e',
 }
 
 function apiBase() {
@@ -40,6 +46,17 @@ function apiBase() {
   const fromBackend = import.meta.env.VITE_API_BASE_PATH
   if (fromBackend) return String(fromBackend).replace(/\/+$/, '')
   return (import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+}
+
+function MicrosoftLogo() {
+  return (
+    <svg width="21" height="21" viewBox="0 0 21 21" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  )
 }
 
 export default function LoginPage({ onSignedIn }) {
@@ -91,11 +108,6 @@ export default function LoginPage({ onSignedIn }) {
             ? data.detail
             : data.detail?.[0]?.msg || `${r.status} ${r.statusText}`
         setError(msg || 'Sign-in failed')
-        try {
-          await msal.logoutPopup({ postLogoutRedirectUri: getMsalRedirectUri() })
-        } catch {
-          /* ignore */
-        }
         return
       }
       if (!data.employee) {
@@ -121,7 +133,7 @@ export default function LoginPage({ onSignedIn }) {
         background: C.pageBg,
         color: C.text,
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
-        padding: 24,
+        padding: 16,
       }}
     >
       <style>{`
@@ -130,69 +142,175 @@ export default function LoginPage({ onSignedIn }) {
       `}</style>
       <div
         style={{
-          width: 'min(400px, 100%)',
-          background: C.panelBg,
-          border: `0.5px solid ${C.border}`,
-          borderRadius: 12,
-          padding: '28px 26px',
-          boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+          width: 475,
+          maxWidth: 'calc(100vw - 32px)',
+          minHeight: 425,
+          background: C.cardBg,
+          border: `1px solid ${C.border}`,
+          borderRadius: 16,
+          padding: 42,
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
         }}
       >
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: C.muted, textTransform: 'uppercase', marginBottom: 8 }}>
-          Feed Alerts Engine
-        </div>
-        <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', marginBottom: 8 }}>Sign in</h1>
-        <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.5, marginBottom: 22 }}>
-          Use your Microsoft work account. You must have an active employee record in MyWork.
-        </p>
-
-        {!configured && (
+        <div style={{ textAlign: 'center', width: '100%' }}>
           <div
             style={{
-              fontSize: 12,
-              color: C.red,
-              marginBottom: 14,
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: `0.5px solid rgba(248,113,113,0.35)`,
-              background: 'rgba(248,113,113,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
             }}
           >
-            Azure AD is not configured in the frontend build. Add{' '}
-            <code style={{ fontSize: 11 }}>VITE_AZURE_TENANT_ID</code> and{' '}
-            <code style={{ fontSize: 11 }}>VITE_AZURE_CLIENT_ID</code> to your <code style={{ fontSize: 11 }}>frontend/.env</code> and restart Vite.
+            <img
+              src={seanergyIcon}
+              alt=""
+              width={22}
+              height={22}
+              style={{ display: 'block', objectFit: 'contain' }}
+            />
+            <span
+              style={{
+                fontSize: 24,
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2,
+              }}
+            >
+              <span style={{ color: C.text }}>seanergy</span>
+              <span style={{ color: C.accentGreen }}>.ai</span>
+            </span>
           </div>
-        )}
+          <div
+            style={{
+              marginTop: 6,
+              fontSize: 13,
+              fontWeight: 500,
+              letterSpacing: '2px',
+              color: C.subtitle,
+            }}
+          >
+            SeaSignal
+          </div>
+        </div>
 
-        <button
-          type="button"
-          disabled={busy || !configured}
-          onClick={signIn}
+        <div
           style={{
             width: '100%',
+            marginTop: 42,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: 10,
-            padding: '12px 16px',
-            borderRadius: 8,
-            border: `0.5px solid ${C.accent}`,
-            background: C.accentBg,
-            color: C.accentText,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: busy || !configured ? 'not-allowed' : 'pointer',
-            opacity: busy || !configured ? 0.55 : 1,
-            fontFamily: 'inherit',
+            flex: 1,
           }}
         >
-          {busy ? 'Signing in…' : 'Sign in with Microsoft'}
-        </button>
+          <h1
+            style={{
+              fontSize: 26,
+              fontWeight: 600,
+              color: C.text,
+              textAlign: 'center',
+              marginBottom: 16,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            Sign in
+          </h1>
+          <p
+            style={{
+              fontSize: 16,
+              color: C.muted,
+              lineHeight: 1.5,
+              textAlign: 'center',
+              maxWidth: 340,
+              marginBottom: 28,
+            }}
+          >
+            Use your Microsoft work account. You must have an active employee record in MyWork.
+          </p>
 
-        {error && (
-          <div style={{ marginTop: 14, fontSize: 12, color: C.red, lineHeight: 1.45 }}>{error}</div>
-        )}
+          {!configured && (
+            <div
+              style={{
+                width: '100%',
+                fontSize: 13,
+                color: C.warnText,
+                marginBottom: 16,
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: `1px solid ${C.warnBorder}`,
+                background: C.warnBg,
+                lineHeight: 1.45,
+                textAlign: 'center',
+              }}
+            >
+              Azure AD is not configured in the frontend build. Add{' '}
+              <code style={{ fontSize: 12 }}>VITE_AZURE_TENANT_ID</code> and{' '}
+              <code style={{ fontSize: 12 }}>VITE_AZURE_CLIENT_ID</code> to your{' '}
+              <code style={{ fontSize: 12 }}>frontend/.env</code> and restart Vite.
+            </div>
+          )}
 
+          <button
+            type="button"
+            disabled={busy || !configured}
+            onClick={signIn}
+            style={{
+              width: '100%',
+              height: 56,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 12,
+              borderRadius: 10,
+              border: `1px solid ${C.buttonBorder}`,
+              background: C.cardBg,
+              color: C.text,
+              fontSize: 16,
+              fontWeight: 500,
+              cursor: busy || !configured ? 'not-allowed' : 'pointer',
+              opacity: busy || !configured ? 0.55 : 1,
+              fontFamily: 'inherit',
+              boxShadow: 'none',
+            }}
+          >
+            <MicrosoftLogo />
+            {busy ? 'Signing in...' : 'Sign in with Microsoft'}
+          </button>
+
+          {error && (
+            <div
+              style={{
+                width: '100%',
+                marginTop: 16,
+                fontSize: 14,
+                color: C.red,
+                lineHeight: 1.45,
+                textAlign: 'center',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: `1px solid ${C.redBorder}`,
+                background: C.redBg,
+              }}
+            >
+              {error}
+            </div>
+          )}
+        </div>
+
+        <p
+          style={{
+            marginTop: 32,
+            fontSize: 13,
+            color: C.subtitle,
+            textAlign: 'center',
+            width: '100%',
+          }}
+        >
+          © seanergy.ai group. All rights reserved
+        </p>
       </div>
     </div>
   )

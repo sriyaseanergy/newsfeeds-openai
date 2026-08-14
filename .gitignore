@@ -8,3 +8,6 @@ frontend/.env
 frontend/node_modules/
 .vscode/
 backend/logs/
+logs/
+backend/data/
+data/config/graph_msal_token_cache.bin
