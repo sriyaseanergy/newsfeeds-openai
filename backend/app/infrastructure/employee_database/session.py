@@ -4,6 +4,7 @@ from collections.abc import Generator
 from functools import lru_cache
 
 from app.infrastructure.config.settings import get_settings
+from fastapi import HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -32,7 +33,13 @@ def get_employee_session_factory() -> sessionmaker[Session]:
 
 
 def get_employee_db() -> Generator[Session, None, None]:
-    session_factory = get_employee_session_factory()
+    try:
+        session_factory = get_employee_session_factory()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     db = session_factory()
     try:
         yield db
