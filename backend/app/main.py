@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
+from app.api.health.router import router as health_router
 from app.api.router import api_router
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.logging import configure_logging, get_logger
@@ -76,6 +77,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(health_router)
 app.include_router(api_router)
 app.include_router(graph_oauth_router)
 logger.info("Application startup completed.")
