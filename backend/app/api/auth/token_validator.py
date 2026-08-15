@@ -77,3 +77,23 @@ class AzureAdIdTokenValidator:
         raise MissingEmailClaimError(
             "ID token does not contain email, preferred_username, or upn."
         )
+
+    def extract_name(self, claims: dict[str, object], email: str) -> str:
+        raw_name = claims.get("name")
+        if isinstance(raw_name, str):
+            name = raw_name.strip()
+            if name:
+                return name
+
+        given_name = claims.get("given_name")
+        family_name = claims.get("family_name")
+        if isinstance(given_name, str) and given_name.strip():
+            given = given_name.strip()
+            if isinstance(family_name, str) and family_name.strip():
+                return f"{given} {family_name.strip()}"
+            return given
+
+        local_part = email.split("@", 1)[0].strip()
+        if local_part:
+            return local_part
+        return email

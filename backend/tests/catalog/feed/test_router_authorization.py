@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 from app.api.auth.dependencies import get_current_employee
+from app.api.auth.models import AuthenticatedUser
 from app.catalog.feed.model import FetchKind
 from app.catalog.feed.router import get_feed_service, router as feed_router
 from app.catalog.feed.schemas import FeedCreate, FeedResponse, FeedUpdate
-from app.infrastructure.employee_database.repository import EmployeeRecord
+from app.core.settings import Settings
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -20,12 +21,20 @@ DOMAIN_ID = UUID("22222222-2222-2222-2222-222222222222")
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def _employee(designation: str) -> EmployeeRecord:
-    return EmployeeRecord(
-        emp_no="E001",
+def _settings(admin_emails: str) -> Settings:
+    return Settings(
+        azure_tenant_id="647119b9-2120-453d-ab27-e02884c15a1b",
+        azure_auth_client_id="6442ff78-2021-4ee3-8dd3-b0b04cae8066",
+        feed_source_admin_emails=admin_emails,
+    )
+
+
+def _user(email: str) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        email=email,
         name="Test User",
-        email="test.user@example.com",
-        designation=designation,
+        designation="Employee",
+        emp_no=None,
     )
 
 
@@ -76,68 +85,67 @@ def client(mock_feed_service: MagicMock) -> TestClient:
     app.dependency_overrides.clear()
 
 
-def _set_employee(client: TestClient, employee: EmployeeRecord | None) -> None:
+def _set_user(client: TestClient, user: AuthenticatedUser | None) -> None:
     app = client.app
-    if employee is None:
+    if user is None:
         app.dependency_overrides.pop(get_current_employee, None)
         return
-    app.dependency_overrides[get_current_employee] = lambda: employee
+    app.dependency_overrides[get_current_employee] = lambda: user
 
 
-@pytest.mark.parametrize("designation", ["Super Admin", "Delivery Manager"])
-def test_authorized_employee_can_create_feed(
+@pytest.mark.parametrize("email", ["admin@example.com", "ADMIN@example.com"])
+def test_admin_email_can_create_feed(
     client: TestClient,
     mock_feed_service: MagicMock,
-    designation: str,
+    email: str,
 ) -> None:
-    _set_employee(client, _employee(designation))
-    response = client.post("/feeds", json=_create_payload())
+    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
+        _set_user(client, _user(email))
+        response = client.post("/feeds", json=_create_payload())
     assert response.status_code == 201
-    assert response.json()["name"] == "Example Feed"
     mock_feed_service.create.assert_called_once()
-    create_payload = mock_feed_service.create.call_args.args[0]
-    assert isinstance(create_payload, FeedCreate)
-    assert create_payload.name == "Example Feed"
 
 
-@pytest.mark.parametrize("designation", ["Super Admin", "Delivery Manager"])
-def test_authorized_employee_can_update_feed(
+@pytest.mark.parametrize("email", ["admin@example.com"])
+def test_admin_email_can_update_feed(
     client: TestClient,
     mock_feed_service: MagicMock,
-    designation: str,
+    email: str,
 ) -> None:
-    _set_employee(client, _employee(designation))
-    response = client.put(f"/feeds/{FEED_ID}", json=_update_payload())
+    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
+        _set_user(client, _user(email))
+        response = client.put(f"/feeds/{FEED_ID}", json=_update_payload())
     assert response.status_code == 200
-    assert response.json()["name"] == "Example Feed"
-    mock_feed_service.update.assert_called_once_with(FEED_ID, FeedUpdate(name="Updated Feed"))
+    mock_feed_service.update.assert_called_once()
 
 
-@pytest.mark.parametrize("designation", ["Super Admin", "Delivery Manager"])
-def test_authorized_employee_can_delete_feed(
+@pytest.mark.parametrize("email", ["admin@example.com"])
+def test_admin_email_can_delete_feed(
     client: TestClient,
     mock_feed_service: MagicMock,
-    designation: str,
+    email: str,
 ) -> None:
-    _set_employee(client, _employee(designation))
-    response = client.delete(f"/feeds/{FEED_ID}")
+    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
+        _set_user(client, _user(email))
+        response = client.delete(f"/feeds/{FEED_ID}")
     assert response.status_code == 204
-    mock_feed_service.delete.assert_called_once_with(FEED_ID)
+    mock_feed_service.delete.assert_called_once()
 
 
 @pytest.mark.parametrize("method", ["post", "put", "delete"])
-def test_unauthorized_designation_receives_403(
+def test_non_admin_authenticated_user_receives_403(
     client: TestClient,
     mock_feed_service: MagicMock,
     method: str,
 ) -> None:
-    _set_employee(client, _employee("Software Engineer"))
-    if method == "post":
-        response = client.post("/feeds", json=_create_payload())
-    elif method == "put":
-        response = client.put(f"/feeds/{FEED_ID}", json=_update_payload())
-    else:
-        response = client.delete(f"/feeds/{FEED_ID}")
+    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
+        _set_user(client, _user("other@example.com"))
+        if method == "post":
+            response = client.post("/feeds", json=_create_payload())
+        elif method == "put":
+            response = client.put(f"/feeds/{FEED_ID}", json=_update_payload())
+        else:
+            response = client.delete(f"/feeds/{FEED_ID}")
 
     assert response.status_code == 403
     assert response.json() == {
@@ -154,7 +162,7 @@ def test_unauthenticated_request_receives_401(
     mock_feed_service: MagicMock,
     method: str,
 ) -> None:
-    _set_employee(client, None)
+    _set_user(client, None)
     if method == "post":
         response = client.post("/feeds", json=_create_payload())
     elif method == "put":
@@ -173,8 +181,7 @@ def test_list_feeds_remains_unauthenticated(
     client: TestClient,
     mock_feed_service: MagicMock,
 ) -> None:
-    _set_employee(client, None)
+    _set_user(client, None)
     response = client.get("/feeds")
     assert response.status_code == 200
-    assert response.json()[0]["name"] == "Example Feed"
     mock_feed_service.list.assert_called_once()

@@ -1,17 +1,9 @@
 from __future__ import annotations
 
 from app.api.auth.authenticator import EmployeeAuthenticator
-from app.api.auth.exceptions import (
-    InactiveEmployeeError,
-    InvalidIdTokenError,
-    MissingEmailClaimError,
-)
+from app.api.auth.exceptions import InvalidIdTokenError, MissingEmailClaimError
+from app.api.auth.models import AuthenticatedUser
 from app.core.settings import get_settings
-from app.infrastructure.employee_database.repository import (
-    EmployeeRecord,
-    EmployeeRepository,
-)
-from app.infrastructure.employee_database.session import get_employee_session_factory
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -31,10 +23,11 @@ def require_bearer_token(
 
 def get_current_employee(
     token: str = Depends(require_bearer_token),
-) -> EmployeeRecord:
+) -> AuthenticatedUser:
     settings = get_settings()
+    authenticator = EmployeeAuthenticator(settings=settings)
     try:
-        email = EmployeeAuthenticator(settings=settings).resolve_email_from_token(token)
+        return authenticator.authenticate(token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -50,26 +43,3 @@ def get_current_employee(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-
-    try:
-        session_factory = get_employee_session_factory()
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-
-    db = session_factory()
-    try:
-        authenticator = EmployeeAuthenticator(
-            EmployeeRepository(db, settings),
-            settings=settings,
-        )
-        return authenticator.lookup_active_employee(email)
-    except InactiveEmployeeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(exc),
-        ) from exc
-    finally:
-        db.close()

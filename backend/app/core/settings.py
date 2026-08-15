@@ -32,11 +32,13 @@ class Settings(BaseSettings):
     weekly_digest_time: str = "08:00"
     scheduler_enabled: bool = True
 
-    # Employee SPA authentication (MyWork login). Completely separate from
-    # Graph newsletter sending. SPA -> Azure AD ID token -> MyWork lookup.
+    # Employee SPA authentication. SPA -> Azure AD ID token -> authenticated user.
     # Env: AZURE_TENANT_ID, AZURE_AUTH_CLIENT_ID
     azure_tenant_id: str = ""
     azure_auth_client_id: str = ""
+
+    # Comma-separated emails allowed to manage feed sources (POST/PUT/DELETE /feeds).
+    feed_source_admin_emails: str = ""
 
     # Microsoft Graph delegated Mail.Send for newsletters.
     # News Feeds backend -> delegated MSAL token -> Graph Mail.Send

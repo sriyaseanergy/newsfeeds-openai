@@ -737,10 +737,9 @@ function Badge({ children, color }) {
 
 const FETCH_KINDS = ['RSS', 'CRAWL']
 
-/** Who may add feeds and delete feeds (case-insensitive match on designation from Employee). */
+/** Who may add feeds and delete feeds (from backend session flag). */
 function canManageFeedSources(employee) {
-    const raw = String(employee?.designation ?? '').trim().toLowerCase()
-    return raw === 'super admin' || raw === 'delivery manager'
+    return employee?.can_manage_feed_sources === true
 }
 
 function AddFeedForm({ technologyDomains, onAdd, canManage }) {
