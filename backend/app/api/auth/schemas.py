@@ -10,10 +10,11 @@ class SessionRequest(BaseModel):
 class EmployeeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    emp_no: str = Field(min_length=1)
+    emp_no: str | None = None
     name: str = Field(min_length=1)
     email: EmailStr
     designation: str = Field(min_length=1)
+    can_manage_feed_sources: bool = False
 
 
 class SessionResponse(BaseModel):

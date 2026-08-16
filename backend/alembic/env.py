@@ -71,8 +71,9 @@ def run_migrations_online() -> None:
     """
     settings = get_settings()
     database_url = _normalize_database_url(settings.database_url)
-    config.set_main_option("sqlalchemy.url", database_url)
-
+    # Pass the URL directly to create_engine. Do not use config.set_main_option
+    # here: ConfigParser treats % in URL-encoded passwords (e.g. %40) as
+    # interpolation syntax and raises ValueError.
     connectable = create_engine(database_url, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:

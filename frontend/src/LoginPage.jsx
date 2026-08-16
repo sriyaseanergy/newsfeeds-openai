@@ -101,12 +101,21 @@ export default function LoginPage({ onSignedIn }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_token: idToken }),
       })
-      const data = await r.json().catch(() => ({}))
+      const raw = await r.text()
+      let data = {}
+      try {
+        data = raw ? JSON.parse(raw) : {}
+      } catch {
+        if (!r.ok) {
+          setError(raw || `${r.status} ${r.statusText}`)
+          return
+        }
+      }
       if (!r.ok) {
         const msg =
           typeof data.detail === 'string'
             ? data.detail
-            : data.detail?.[0]?.msg || `${r.status} ${r.statusText}`
+            : data.detail?.[0]?.msg || raw || `${r.status} ${r.statusText}`
         setError(msg || 'Sign-in failed')
         return
       }
@@ -228,7 +237,7 @@ export default function LoginPage({ onSignedIn }) {
               marginBottom: 28,
             }}
           >
-            Use your Microsoft work account. You must have an active employee record in MyWork.
+            Use your Microsoft work account to sign in.
           </p>
 
           {!configured && (
