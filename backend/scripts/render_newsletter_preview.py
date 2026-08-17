@@ -303,6 +303,7 @@ def main() -> None:
                     technology_domain=domain_name,
                     classification=classification,
                     enrichment=enrichment,
+                    image_url=pending.article_data.image_url,
                 )
             )
             print(

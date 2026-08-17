@@ -31,6 +31,7 @@ class Article(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     is_processed: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

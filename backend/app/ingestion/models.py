@@ -15,6 +15,7 @@ class NormalizedArticleData(BaseModel):
     summary: str | None = None
     content: str | None = None
     source_identifier: str | None = None
+    image_url: str | None = None
     is_processed: bool = False
 
 

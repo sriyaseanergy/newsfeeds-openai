@@ -14,6 +14,7 @@ class ArticleCreate(BaseModel):
     published_at: datetime | None = None
     summary: str | None = None
     content: str | None = None
+    image_url: str | None = Field(default=None, max_length=2048)
     is_processed: bool = False
 
     @field_validator("title")
@@ -35,6 +36,7 @@ class ArticleUpdate(BaseModel):
     published_at: datetime | None = None
     summary: str | None = None
     content: str | None = None
+    image_url: str | None = Field(default=None, max_length=2048)
     is_processed: bool | None = None
 
     @field_validator("title")
@@ -59,6 +61,7 @@ class ArticleResponse(BaseModel):
     published_at: datetime | None
     summary: str | None
     content: str | None
+    image_url: str | None
     is_processed: bool
     created_at: datetime
     updated_at: datetime

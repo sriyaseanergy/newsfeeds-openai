@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 from app.catalog.feed.model import Feed
 from app.ingestion.acquisition import FeedAcquirer, FeedAcquisitionResult
+from app.ingestion.image_url import extract_image_url_from_metadata
 from app.ingestion.models import NormalizedArticleData
 from app.infrastructure.logging import get_logger
 from crawl4ai import AsyncWebCrawler
@@ -576,7 +577,7 @@ class Crawl4AIFetcher(FeedAcquirer):
             return None
 
         html = str(getattr(crawl_result, "html", "") or "")
-        metadata = self._extract_article_metadata(crawl_result, html)
+        metadata = self._extract_article_metadata(crawl_result, html, page_url=url)
 
         page_title = self._clean_card_title(metadata.get("title", ""))
         listing_title = self._clean_card_title(str(listing_candidate.get("title") or ""))
@@ -607,11 +608,19 @@ class Crawl4AIFetcher(FeedAcquirer):
             published_at=published_at,
             summary=self._normalize_text(summary) if summary else None,
             content=content,
+            image_url=metadata.get("image_url"),
             is_processed=False,
         )
 
-    def _extract_article_metadata(self, crawl_result: Any, html: str) -> dict[str, Any]:
+    def _extract_article_metadata(
+        self,
+        crawl_result: Any,
+        html: str,
+        *,
+        page_url: str | None = None,
+    ) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
+        image_sources: dict[str, Any] = {}
 
         result_title = self._clean_card_title(str(getattr(crawl_result, "title", "") or ""))
         if result_title:
@@ -619,6 +628,7 @@ class Crawl4AIFetcher(FeedAcquirer):
 
         result_meta = getattr(crawl_result, "metadata", None)
         if isinstance(result_meta, dict):
+            image_sources.update(result_meta)
             for key in ("title", "og:title", "twitter:title"):
                 value = str(result_meta.get(key) or "").strip()
                 if value and "title" not in metadata:
@@ -635,6 +645,7 @@ class Crawl4AIFetcher(FeedAcquirer):
         if html:
             parser = _HeadMetadataParser()
             parser.feed(html)
+            image_sources.update(parser.meta)
             if "title" not in metadata:
                 page_title = parser.meta.get("og:title") or parser.meta.get("twitter:title") or parser.title_text or parser.h1_text
                 if page_title:
@@ -648,6 +659,10 @@ class Crawl4AIFetcher(FeedAcquirer):
                 parsed = self._parse_datetime(date_candidate)
                 if parsed is not None:
                     metadata["published_at"] = parsed
+
+        image_url = extract_image_url_from_metadata(image_sources, html, base_url=page_url)
+        if image_url:
+            metadata["image_url"] = image_url
 
         return metadata
 
