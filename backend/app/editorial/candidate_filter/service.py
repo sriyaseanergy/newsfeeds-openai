@@ -9,6 +9,7 @@ from app.editorial.candidate_filter.rules import (
     EmptyContentRule,
     MissingTitleRule,
     MissingUrlRule,
+    AlreadyProcessedRule,
 )
 
 
@@ -22,6 +23,7 @@ class CandidateFilterService:
             MissingTitleRule(),
             MissingUrlRule(),
             EmptyContentRule(),
+            AlreadyProcessedRule(),
             EditorialWindowRule(window_days=editorial_window_days),
         ]
 

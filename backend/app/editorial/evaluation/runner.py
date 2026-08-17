@@ -2,8 +2,6 @@
 Developer-only editorial evaluation runner.
 
 This runner is intended for local development only and does not:
-- persist data
-- read article rows from the database
 - send emails
 - alter production execution paths
 """
@@ -17,8 +15,15 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from app.catalog.article.model import Article
+from uuid import UUID
+
+from app.catalog.article.repository import ArticleRepository
 from app.catalog.feed.model import Feed
 from app.catalog.feed.repository import FeedRepository
+from app.editorial.candidate_filter.candidates import (
+    build_candidate_article,
+    mark_article_processed,
+)
 from app.core.settings import get_settings
 from app.editorial.candidate_filter.enums import CandidateDecision
 from app.editorial.candidate_filter.service import CandidateFilterService
@@ -63,9 +68,9 @@ class PendingEvaluation:
     article_id: str
     feed: Feed
     article_data: NormalizedArticleData
-    article: Article
     article_index: int
     classification_input: ClassificationInput
+    stored_article_id: UUID | None = None
 
 
 class NewsletterCard(BaseModel):
@@ -154,6 +159,7 @@ def main() -> None:
 
     with SessionLocal() as db:
         feed_repository = FeedRepository(db)
+        article_repository = ArticleRepository(db)
         feeds = _select_enabled_feeds(feed_repository.list(), args.max_feeds)
 
         if not feeds:
@@ -196,7 +202,11 @@ def main() -> None:
                 print(f"  Article #{idx}: {article_data.title}")
                 print(f"    URL: {article_data.url}")
 
-                article = _to_candidate_article(feed, article_data)
+                article, stored_article_id = build_candidate_article(
+                    feed,
+                    article_data,
+                    article_repository,
+                )
 
                 try:
                     filter_result = candidate_filter.evaluate(article)
@@ -229,9 +239,9 @@ def main() -> None:
                         article_id=article_id,
                         feed=feed,
                         article_data=article_data,
-                        article=article,
                         article_index=idx,
                         classification_input=_to_classification_input(feed, article),
+                        stored_article_id=stored_article_id,
                     )
                 )
                 print(
@@ -306,6 +316,13 @@ def main() -> None:
 
             stats.classifications_completed += 1
             _print_classification(classification)
+
+            mark_article_processed(
+                article_repository,
+                feed,
+                article_data,
+                stored_article_id=pending.stored_article_id,
+            )
 
             try:
                 decision = decision_engine.decide(classification)
@@ -397,21 +414,6 @@ def _select_enabled_feeds(feeds: Iterable[Feed], max_feeds: int) -> list[Feed]:
         if len(selected) >= max_feeds:
             break
     return selected
-
-
-def _to_candidate_article(feed: Feed, article_data: NormalizedArticleData) -> Article:
-    return Article(
-        feed_id=feed.id,
-        title=article_data.title,
-        url=article_data.url,
-        source_identifier=article_data.source_identifier,
-        author=article_data.author,
-        published_at=article_data.published_at,
-        summary=article_data.summary,
-        content=article_data.content,
-        is_processed=article_data.is_processed,
-        feed=feed,
-    )
 
 
 def _to_classification_input(feed: Feed, article: Article) -> ClassificationInput:

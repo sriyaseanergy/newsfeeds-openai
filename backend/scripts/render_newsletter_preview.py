@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.catalog.article.model import Article
+from app.catalog.article.repository import ArticleRepository
 from app.catalog.feed.model import Feed, FetchKind
 from app.catalog.feed.repository import FeedRepository
 from app.core.settings import get_settings
@@ -21,6 +22,11 @@ from app.editorial.classification.enums import (
     ArticleType,
     Severity,
 )
+from app.editorial.candidate_filter.candidates import (
+    build_candidate_article,
+    mark_article_processed,
+)
+from app.editorial.candidate_filter.enums import CandidateDecision
 from app.editorial.candidate_filter.service import CandidateFilterService
 from app.editorial.classification.models import (
     ClassificationBatchItem,
@@ -177,21 +183,6 @@ def _merge_demo_sections(
     return [*articles, *demo_articles]
 
 
-def _to_candidate_article(feed: Feed, article_data: NormalizedArticleData) -> Article:
-    return Article(
-        feed_id=feed.id,
-        title=article_data.title,
-        url=article_data.url,
-        source_identifier=article_data.source_identifier,
-        author=article_data.author,
-        published_at=article_data.published_at,
-        summary=article_data.summary,
-        content=article_data.content,
-        is_processed=article_data.is_processed,
-        feed=feed,
-    )
-
-
 def _to_classification_input(feed: Feed, article: Article) -> ClassificationInput:
     domain = feed.technology_domain
     return ClassificationInput(
@@ -222,6 +213,7 @@ def main() -> None:
 
     with SessionLocal() as db:
         feed_repository = FeedRepository(db)
+        article_repository = ArticleRepository(db)
         feeds = _select_enabled_feeds(feed_repository.list(), args.max_feeds)
         if args.rss_only:
             feeds = [feed for feed in feeds if feed.fetch_kind == FetchKind.RSS]
@@ -240,7 +232,11 @@ def main() -> None:
 
             for article_data in articles:
                 article_seq += 1
-                article = _to_candidate_article(feed, article_data)
+                article, stored_article_id = build_candidate_article(
+                    feed,
+                    article_data,
+                    article_repository,
+                )
                 filter_result = candidate_filter.evaluate(article)
                 if filter_result.decision == CandidateDecision.SKIP:
                     continue
@@ -250,9 +246,9 @@ def main() -> None:
                         article_id=f"preview_{article_seq}",
                         feed=feed,
                         article_data=article_data,
-                        article=article,
                         article_index=article_seq,
                         classification_input=_to_classification_input(feed, article),
+                        stored_article_id=stored_article_id,
                     )
                 )
 
@@ -278,6 +274,12 @@ def main() -> None:
                 continue
 
             classification = batched
+            mark_article_processed(
+                article_repository,
+                pending.feed,
+                pending.article_data,
+                stored_article_id=pending.stored_article_id,
+            )
             decision = decision_engine.decide(classification)
             if not decision.include_in_newsletter:
                 continue

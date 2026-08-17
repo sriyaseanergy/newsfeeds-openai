@@ -47,3 +47,9 @@ class ArticleRepository:
         self.db.delete(article)
         self.db.commit()
 
+    def mark_processed(self, article: Article) -> Article:
+        article.is_processed = True
+        self.db.commit()
+        self.db.refresh(article)
+        return article
+
