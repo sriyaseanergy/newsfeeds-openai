@@ -16,7 +16,11 @@ from app.catalog.article.model import Article
 from app.catalog.feed.model import Feed, FetchKind
 from app.catalog.feed.repository import FeedRepository
 from app.core.settings import get_settings
-from app.editorial.candidate_filter.enums import CandidateDecision
+from app.editorial.classification.enums import (
+    Actionability,
+    ArticleType,
+    Severity,
+)
 from app.editorial.candidate_filter.service import CandidateFilterService
 from app.editorial.classification.models import (
     ClassificationBatchItem,
@@ -25,8 +29,10 @@ from app.editorial.classification.models import (
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
 from app.editorial.decision import AIEditorialDecisionPolicy, EditorialDecisionEngine
 from app.editorial.enrichment import OpenAIEditorialEnrichmentProvider
+from app.editorial.enrichment.models import EditorialEnrichment
 from app.editorial.evaluation.runner import PendingEvaluation, _select_enabled_feeds
 from app.editorial.newsletter import (
+    NewsletterArticle,
     NewsletterRenderConfig,
     NewsletterRenderInput,
     NewsletterRenderer,
@@ -67,7 +73,108 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip crawl feeds (avoids Playwright dependency).",
     )
+    parser.add_argument(
+        "--demo-sections",
+        action="store_true",
+        help=(
+            "Fill missing section types with sample articles so the HTML preview "
+            "shows RELEASES, RESEARCH, and NOTABLE READS layouts."
+        ),
+    )
     return parser.parse_args()
+
+
+def _demo_enrichment(summary: str) -> EditorialEnrichment:
+    return EditorialEnrichment(
+        key_points=[summary],
+        business_impact="Sample content for newsletter layout preview.",
+        recommended_action="Review section styling in the rendered HTML.",
+    )
+
+
+def _section_kind_for_article(article: NewsletterArticle) -> str:
+    if article.severity == Severity.CRITICAL:
+        return "critical"
+    if article.article_type == ArticleType.RELEASE:
+        return "releases"
+    if article.article_type == ArticleType.RESEARCH:
+        return "research"
+    return "notable_reads"
+
+
+def _demo_articles_for_missing_sections(
+    articles: list[NewsletterArticle],
+) -> list[NewsletterArticle]:
+    represented = {_section_kind_for_article(article) for article in articles}
+    published = datetime(2026, 7, 6, tzinfo=UTC)
+    samples: list[NewsletterArticle] = []
+
+    if "releases" not in represented:
+        samples.append(
+            NewsletterArticle(
+                title="OpenAI launches agent SDK with built-in tool orchestration",
+                url="https://example.com/openai-agent-sdk",
+                source_name="TechCrunch",
+                published_at=published,
+                article_type=ArticleType.RELEASE,
+                technology_domain="AI",
+                severity=Severity.NONE,
+                actionability=Actionability.INFORMATIONAL,
+                enrichment=_demo_enrichment(
+                    "The new SDK lets developers compose multi-step agents with "
+                    "memory, retrieval, and guardrails in a single configuration file."
+                ),
+            )
+        )
+    if "research" not in represented:
+        samples.append(
+            NewsletterArticle(
+                title="Scaling laws for sparse mixture-of-experts at inference time",
+                url="https://example.com/sparse-moe-scaling",
+                source_name="ArXiv",
+                published_at=published,
+                article_type=ArticleType.RESEARCH,
+                technology_domain="AI",
+                severity=Severity.NONE,
+                actionability=Actionability.INFORMATIONAL,
+                enrichment=_demo_enrichment(
+                    "Researchers report predictable quality gains when routing "
+                    "tokens through wider expert pools under fixed latency budgets."
+                ),
+            )
+        )
+    if "notable_reads" not in represented:
+        samples.append(
+            NewsletterArticle(
+                title="Why retrieval quality matters more than model size for agents",
+                url="https://example.com/retrieval-quality-agents",
+                source_name="Simon Willison",
+                published_at=published,
+                article_type=ArticleType.BLOG,
+                technology_domain="AI",
+                severity=Severity.NONE,
+                actionability=Actionability.MONITOR,
+                enrichment=_demo_enrichment(
+                    "Practitioner notes argue that grounded context beats raw "
+                    "parameter count for reliable tool-using workflows."
+                ),
+            )
+        )
+
+    return samples
+
+
+def _merge_demo_sections(
+    articles: list[NewsletterArticle],
+    *,
+    enabled: bool,
+) -> list[NewsletterArticle]:
+    if not enabled:
+        return articles
+    demo_articles = _demo_articles_for_missing_sections(articles)
+    if not demo_articles:
+        return articles
+    return [*articles, *demo_articles]
 
 
 def _to_candidate_article(feed: Feed, article_data: NormalizedArticleData) -> Article:
@@ -203,6 +310,14 @@ def main() -> None:
                 f"severity={classification.severity.value}, "
                 f"domain={domain_name or 'n/a'}]"
             )
+
+    live_count = len(included_articles)
+    included_articles = _merge_demo_sections(
+        included_articles,
+        enabled=args.demo_sections,
+    )
+    if args.demo_sections and len(included_articles) > live_count:
+        print(f"    demo: added {len(included_articles) - live_count} sample section filler(s)")
 
     render_input = NewsletterRenderInput(
         articles=included_articles,
