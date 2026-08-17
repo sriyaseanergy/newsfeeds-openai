@@ -415,13 +415,12 @@ def _to_candidate_article(feed: Feed, article_data: NormalizedArticleData) -> Ar
 
 
 def _to_classification_input(feed: Feed, article: Article) -> ClassificationInput:
-    domain_name = (
-        feed.technology_domain.name if feed.technology_domain is not None else ""
-    )
+    domain = feed.technology_domain
     return ClassificationInput(
         title=article.title or "",
         source_name=feed.name or "",
-        technology_domain=domain_name,
+        technology_domain=domain.name if domain is not None else "",
+        technology_domain_description=domain.description if domain is not None else None,
         summary=article.summary,
         content=article.content,
     )

@@ -2,6 +2,8 @@ from typing import Literal, TypedDict
 
 from app.editorial.classification.models import ClassificationInput
 
+CLASSIFICATION_CONTENT_MAX_CHARS = 2200
+
 
 class PromptMessage(TypedDict):
     role: Literal["system", "user"]
@@ -72,14 +74,31 @@ Batch classification mode:
 """.strip()
 
 
+def _truncate_content(content: str | None, max_chars: int = CLASSIFICATION_CONTENT_MAX_CHARS) -> str:
+    if not content:
+        return ""
+    text = content.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n\n[Content truncated for classification]"
+
+
+def _format_domain_lines(classification_input: ClassificationInput) -> str:
+    lines = [f"Technology Domain: {classification_input.technology_domain}"]
+    description = (classification_input.technology_domain_description or "").strip()
+    if description:
+        lines.append(f"Technology Domain Description: {description}")
+    return "\n".join(lines)
+
+
 def format_classification_input(classification_input: ClassificationInput) -> str:
     summary = classification_input.summary or ""
-    content = classification_input.content or ""
+    content = _truncate_content(classification_input.content)
 
     return (
         f"Title: {classification_input.title}\n"
         f"Source Name: {classification_input.source_name}\n"
-        f"Technology Domain: {classification_input.technology_domain}\n\n"
+        f"{_format_domain_lines(classification_input)}\n\n"
         f"Summary:\n{summary}\n\n"
         f"Content:\n{content}"
     )
@@ -100,26 +119,17 @@ def format_batch_classification_input(
     return "\n".join(sections).strip()
 
 
-def build_prompt_messages(
-    classification_input: ClassificationInput,
-    domain_instructions: str,
-) -> list[PromptMessage]:
-    system_content = f"{COMMON_SYSTEM_INSTRUCTIONS}\n\n{domain_instructions.strip()}"
+def build_prompt_messages(classification_input: ClassificationInput) -> list[PromptMessage]:
     return [
-        {"role": "system", "content": system_content},
+        {"role": "system", "content": COMMON_SYSTEM_INSTRUCTIONS},
         {"role": "user", "content": format_classification_input(classification_input)},
     ]
 
 
 def build_batch_prompt_messages(
     articles: list[tuple[str, ClassificationInput]],
-    domain_instructions: str,
 ) -> list[PromptMessage]:
-    system_content = (
-        f"{COMMON_SYSTEM_INSTRUCTIONS}\n\n"
-        f"{domain_instructions.strip()}\n\n"
-        f"{BATCH_SYSTEM_ADDENDUM}"
-    )
+    system_content = f"{COMMON_SYSTEM_INSTRUCTIONS}\n\n{BATCH_SYSTEM_ADDENDUM}"
     return [
         {"role": "system", "content": system_content},
         {"role": "user", "content": format_batch_classification_input(articles)},

@@ -28,6 +28,7 @@ class ClassificationInput(BaseModel):
     title: str
     source_name: str
     technology_domain: str
+    technology_domain_description: str | None = None
     summary: str | None = None
     content: str | None = None
 
