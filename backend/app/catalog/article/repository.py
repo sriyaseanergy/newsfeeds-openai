@@ -47,7 +47,12 @@ class ArticleRepository:
         self.db.delete(article)
         self.db.commit()
 
-    def mark_processed(self, article: Article) -> Article:
+    def mark_processed(self, article_id: UUID) -> Article | None:
+        article = self.get_by_id(article_id)
+        if article is None:
+            return None
+        if article.is_processed:
+            return article
         article.is_processed = True
         self.db.commit()
         self.db.refresh(article)

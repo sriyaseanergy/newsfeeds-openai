@@ -260,7 +260,7 @@ def _group_articles(
     pinned_ids: set[str] = set()
 
     for article in articles:
-        if article.severity == Severity.CRITICAL:
+        if _is_pinned_security_article(article):
             grouped[_SectionKind.CRITICAL].append(article)
             pinned_ids.add(article.url)
 
@@ -270,6 +270,21 @@ def _group_articles(
         grouped[_section_kind_for_article(article)].append(article)
 
     return grouped
+
+
+def _is_pinned_security_article(article: NewsletterArticle) -> bool:
+    if article.severity == Severity.CRITICAL:
+        return True
+    if article.technology_domain.strip().upper() != "SECURITY":
+        return False
+    return article.severity in {
+        Severity.MEDIUM,
+        Severity.HIGH,
+        Severity.CRITICAL,
+    } or article.actionability in {
+        Actionability.ACTION_RECOMMENDED,
+        Actionability.IMMEDIATE_ACTION,
+    }
 
 
 def _section_kind_for_article(article: NewsletterArticle) -> _SectionKind:
@@ -370,7 +385,7 @@ def _build_greeting_body(articles: list[NewsletterArticle]) -> str:
         domain_phrase = ", ".join(domains[:-1]) + f", and {domains[-1]}"
     return (
         f"Here's what moved across {domain_phrase} this week — "
-        "grouped by releases, research, and notable reads."
+        "grouped by security alerts, releases, research, and notable reads."
     )
 
 

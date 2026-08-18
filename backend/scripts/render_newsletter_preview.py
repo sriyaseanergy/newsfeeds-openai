@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,10 +34,10 @@ from app.editorial.classification.models import (
     ClassificationInput,
 )
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
-from app.editorial.decision import AIEditorialDecisionPolicy, EditorialDecisionEngine
 from app.editorial.enrichment import OpenAIEditorialEnrichmentProvider
 from app.editorial.enrichment.models import EditorialEnrichment
-from app.editorial.evaluation.runner import PendingEvaluation, _select_enabled_feeds
+from app.editorial.evaluation.runner import PendingEvaluation, _domain_name, _select_enabled_feeds
+from app.editorial.selection import SelectionPolicy, SelectionResult, SelectionTier
 from app.editorial.newsletter import (
     NewsletterArticle,
     NewsletterRenderConfig,
@@ -115,6 +116,24 @@ def _demo_articles_for_missing_sections(
     published = datetime(2026, 7, 6, tzinfo=UTC)
     samples: list[NewsletterArticle] = []
 
+    if "critical" not in represented:
+        samples.append(
+            NewsletterArticle(
+                title="Critical RCE patched in widely deployed API gateway",
+                url="https://example.com/api-gateway-rce-patch",
+                source_name="CISA Alerts",
+                published_at=published,
+                article_type=ArticleType.NEWS,
+                technology_domain="SECURITY",
+                severity=Severity.CRITICAL,
+                actionability=Actionability.IMMEDIATE_ACTION,
+                enrichment=_demo_enrichment(
+                    "A pre-auth remote code execution flaw affects default "
+                    "configurations; vendors issued emergency patches and "
+                    "exploit attempts were observed in the wild."
+                ),
+            )
+        )
     if "releases" not in represented:
         samples.append(
             NewsletterArticle(
@@ -203,7 +222,7 @@ def main() -> None:
     candidate_filter = CandidateFilterService()
     classification_provider = OpenAIClassificationProvider(settings=settings)
     enrichment_provider = OpenAIEditorialEnrichmentProvider(settings=settings)
-    decision_engine = EditorialDecisionEngine(policy=AIEditorialDecisionPolicy())
+    selection_policy = SelectionPolicy()
     acquisition_factory = AcquisitionFactory()
     renderer = NewsletterRenderer()
 
@@ -264,31 +283,42 @@ def main() -> None:
         else:
             classifications_by_id = {}
 
+        classified_by_domain: dict[str, list] = defaultdict(list)
         for pending in pending_evaluations:
-            batched = classifications_by_id.get(pending.article_id)
-            if batched is None:
+            classification = classifications_by_id.get(pending.article_id)
+            if classification is None:
                 logger.warning(
                     "Skipping article without classification (article_id=%s).",
                     pending.article_id,
                 )
                 continue
 
-            classification = batched
             mark_article_processed(
                 article_repository,
                 pending.feed,
                 pending.article_data,
                 stored_article_id=pending.stored_article_id,
             )
-            decision = decision_engine.decide(classification)
-            if not decision.include_in_newsletter:
+            classified_by_domain[_domain_name(pending)].append(
+                (pending.article_id, classification)
+            )
+
+        selection_by_id: dict[str, SelectionResult] = {}
+        for domain_name, classified in classified_by_domain.items():
+            selection_by_id.update(
+                selection_policy.select_for_domain(domain_name, classified)
+            )
+
+        for pending in pending_evaluations:
+            selection = selection_by_id.get(pending.article_id)
+            if selection is None or selection.tier != SelectionTier.SELECTED_FOR_ENRICHMENT:
                 continue
 
+            classification = classifications_by_id[pending.article_id]
             enrichment = enrichment_provider.enrich(
                 article=pending.article_data,
                 classification=classification,
             )
-            decision = decision_engine.finalize_with_enrichment(decision, enrichment)
             domain_name = (
                 pending.feed.technology_domain.name
                 if pending.feed.technology_domain is not None
