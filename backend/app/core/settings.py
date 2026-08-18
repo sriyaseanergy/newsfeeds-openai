@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # Do not reuse AZURE_AUTH_CLIENT_ID (that is employee SPA login only).
     azure_client_id: str = ""
     azure_client_secret: str = ""
+    # Set true when REDIRECT_URI is registered under Azure "Single-page application".
+    # SPA codes must be redeemed in the browser (AADSTS9002327 otherwise).
+    # Prefer registering REDIRECT_URI under Web platform for server-side exchange.
+    azure_graph_public_client: bool = False
     graph_sender_email: str = ""
     graph_timeout_seconds: int = 30
     redirect_uri: str = ""   # env: REDIRECT_URI
