@@ -8,7 +8,7 @@ from app.editorial.classification.enums import (
     Severity,
 )
 from app.editorial.classification.models import EditorialClassification
-from app.editorial.enrichment.models import EditorialEnrichment
+from app.editorial.enrichment.models import EnrichedArticle
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -23,7 +23,7 @@ class NewsletterArticle(BaseModel):
     technology_domain: str = Field(default="", max_length=128)
     severity: Severity
     actionability: Actionability
-    enrichment: EditorialEnrichment
+    enrichment: EnrichedArticle
     image_url: str | None = None
 
 
@@ -51,7 +51,7 @@ def newsletter_article_from_pipeline(
     published_at: datetime | None,
     technology_domain: str,
     classification: EditorialClassification,
-    enrichment: EditorialEnrichment,
+    enrichment: EnrichedArticle,
     image_url: str | None = None,
 ) -> NewsletterArticle:
     return NewsletterArticle(

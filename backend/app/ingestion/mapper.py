@@ -2,7 +2,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.catalog.feed.model import Feed
-from app.ingestion.image_url import extract_image_url_from_rss_entry
+from app.ingestion.image_url import (
+    extract_image_url_from_html,
+    extract_image_url_from_rss_entry,
+)
 from app.ingestion.models import NormalizedArticleData
 
 
@@ -24,6 +27,10 @@ class ArticleMapper:
         published_at = self._extract_published_at(entry)
         source_identifier = self._extract_source_identifier(entry)
         image_url = extract_image_url_from_rss_entry(entry, base_url=url)
+        if not image_url:
+            image_url = extract_image_url_from_html(content_text, base_url=url)
+        if not image_url and summary:
+            image_url = extract_image_url_from_html(str(summary), base_url=url)
 
         return NormalizedArticleData(
             feed_id=feed.id,

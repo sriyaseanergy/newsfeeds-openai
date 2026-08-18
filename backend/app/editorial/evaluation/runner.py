@@ -33,7 +33,7 @@ from app.editorial.classification.models import (
     EditorialClassification,
 )
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
-from app.editorial.enrichment import OpenAIEditorialEnrichmentProvider
+from app.editorial.enrichment import classified_article_from_pipeline, enrich_article
 from app.editorial.selection import SelectionPolicy, SelectionResult, SelectionTier
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.logging import configure_logging, get_logger
@@ -98,7 +98,6 @@ def main() -> None:
     settings = get_settings()
     candidate_filter = CandidateFilterService()
     classification_provider = OpenAIClassificationProvider(settings=settings)
-    enrichment_provider = OpenAIEditorialEnrichmentProvider(settings=settings)
     selection_policy = SelectionPolicy()
     acquisition_factory = AcquisitionFactory()
     pending_evaluations: list[PendingEvaluation] = []
@@ -300,10 +299,15 @@ def main() -> None:
 
             classification = classifications_by_id[pending.article_id]
             try:
-                enrichment_provider.enrich(
-                    article=pending.article_data,
+                classified = classified_article_from_pipeline(
+                    source_name=pending.feed.name or "",
+                    url=pending.article_data.url,
+                    published_at=pending.article_data.published_at,
+                    summary=pending.article_data.summary,
+                    content=pending.article_data.content,
                     classification=classification,
                 )
+                enrich_article(classified, settings=settings)
                 stats.enrichments_completed += 1
             except Exception as exc:
                 stats.failures += 1

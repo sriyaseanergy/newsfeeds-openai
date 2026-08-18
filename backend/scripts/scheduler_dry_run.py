@@ -39,7 +39,7 @@ def main() -> None:
     parser.add_argument(
         "--fire-now",
         action="store_true",
-        help="Immediately invoke both digest stub triggers.",
+        help="Immediately run both digest pipelines (acquire → enrich → email).",
     )
     parser.add_argument(
         "--demo-in-seconds",
@@ -69,8 +69,8 @@ def main() -> None:
 
     if not args.fire_now and args.demo_in_seconds <= 0:
         print(
-            "\nUse --fire-now to invoke both stub triggers immediately, "
-            "or --demo-in-seconds 3 to schedule near-future APScheduler jobs."
+            "\nUse --fire-now to run both digest pipelines immediately, "
+            "or python scripts/run_digest_now.py daily for a single schedule."
         )
 
 

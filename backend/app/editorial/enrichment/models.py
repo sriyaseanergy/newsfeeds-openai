@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from datetime import datetime
+
 from app.editorial.classification.models import EditorialClassification
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,3 +44,25 @@ class ClassifiedArticle(BaseModel):
     summary: str | None = None
     content: str | None = None
     classification: EditorialClassification
+
+
+def classified_article_from_pipeline(
+    *,
+    source_name: str,
+    url: str,
+    published_at: datetime | None,
+    summary: str | None,
+    content: str | None,
+    classification: EditorialClassification,
+) -> ClassifiedArticle:
+    published_date = (
+        published_at.strftime("%Y-%m-%d") if published_at is not None else None
+    )
+    return ClassifiedArticle(
+        source_name=source_name,
+        url=url,
+        published_date=published_date,
+        summary=summary,
+        content=content,
+        classification=classification,
+    )

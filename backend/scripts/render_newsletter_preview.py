@@ -7,11 +7,17 @@ include=True results, and writes rendered newsletter HTML to disk.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
 import argparse
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
-from pathlib import Path
 
 from app.catalog.article.model import Article
 from app.catalog.article.repository import ArticleRepository
@@ -28,15 +34,26 @@ from app.editorial.candidate_filter.candidates import (
     mark_article_processed,
 )
 from app.editorial.candidate_filter.enums import CandidateDecision
+from app.editorial.candidate_filter.rules import (
+    CandidateRule,
+    EditorialWindowRule,
+    EmptyContentRule,
+    MissingTitleRule,
+    MissingUrlRule,
+)
 from app.editorial.candidate_filter.service import CandidateFilterService
 from app.editorial.classification.models import (
     ClassificationBatchItem,
     ClassificationInput,
 )
 from app.editorial.classification.openai_provider import OpenAIClassificationProvider
-from app.editorial.enrichment import OpenAIEditorialEnrichmentProvider
-from app.editorial.enrichment.models import EditorialEnrichment
-from app.editorial.evaluation.runner import PendingEvaluation, _domain_name, _select_enabled_feeds
+from app.editorial.enrichment import (
+    EnrichedArticle,
+    AudienceSummary,
+    classified_article_from_pipeline,
+    enrich_article,
+)
+from app.editorial.evaluation.runner import PendingEvaluation, _domain_name
 from app.editorial.selection import SelectionPolicy, SelectionResult, SelectionTier
 from app.editorial.newsletter import (
     NewsletterArticle,
@@ -88,14 +105,43 @@ def parse_args() -> argparse.Namespace:
             "shows RELEASES, RESEARCH, and NOTABLE READS layouts."
         ),
     )
+    parser.add_argument(
+        "--include-processed",
+        action="store_true",
+        help="Re-evaluate articles already marked is_processed (dev preview only).",
+    )
     return parser.parse_args()
 
 
-def _demo_enrichment(summary: str) -> EditorialEnrichment:
-    return EditorialEnrichment(
-        key_points=[summary],
-        business_impact="Sample content for newsletter layout preview.",
+def _build_candidate_filter(*, include_processed: bool) -> CandidateFilterService:
+    rules: list[CandidateRule] = [
+        MissingTitleRule(),
+        MissingUrlRule(),
+        EmptyContentRule(),
+    ]
+    if not include_processed:
+        from app.editorial.candidate_filter.rules import AlreadyProcessedRule
+
+        rules.append(AlreadyProcessedRule())
+    rules.append(EditorialWindowRule())
+    return CandidateFilterService(rules=rules)
+
+
+def _demo_enrichment(tldr: str, *, source_url: str) -> EnrichedArticle:
+    return EnrichedArticle(
+        tldr=tldr,
+        why_it_matters=AudienceSummary(
+            executive="Sample executive impact for newsletter layout preview.",
+            technical_leadership=(
+                "Sample technical leadership impact for newsletter layout preview."
+            ),
+            engineering="Sample engineering impact for newsletter layout preview.",
+        ),
+        key_details=[],
         recommended_action="Review section styling in the rendered HTML.",
+        tags=["preview", "demo"],
+        source_urls=[source_url],
+        confidence=0.9,
     )
 
 
@@ -117,10 +163,11 @@ def _demo_articles_for_missing_sections(
     samples: list[NewsletterArticle] = []
 
     if "critical" not in represented:
+        demo_url = "https://example.com/api-gateway-rce-patch"
         samples.append(
             NewsletterArticle(
                 title="Critical RCE patched in widely deployed API gateway",
-                url="https://example.com/api-gateway-rce-patch",
+                url=demo_url,
                 source_name="CISA Alerts",
                 published_at=published,
                 article_type=ArticleType.NEWS,
@@ -130,15 +177,17 @@ def _demo_articles_for_missing_sections(
                 enrichment=_demo_enrichment(
                     "A pre-auth remote code execution flaw affects default "
                     "configurations; vendors issued emergency patches and "
-                    "exploit attempts were observed in the wild."
+                    "exploit attempts were observed in the wild.",
+                    source_url=demo_url,
                 ),
             )
         )
     if "releases" not in represented:
+        demo_url = "https://example.com/openai-agent-sdk"
         samples.append(
             NewsletterArticle(
                 title="OpenAI launches agent SDK with built-in tool orchestration",
-                url="https://example.com/openai-agent-sdk",
+                url=demo_url,
                 source_name="TechCrunch",
                 published_at=published,
                 article_type=ArticleType.RELEASE,
@@ -147,15 +196,17 @@ def _demo_articles_for_missing_sections(
                 actionability=Actionability.INFORMATIONAL,
                 enrichment=_demo_enrichment(
                     "The new SDK lets developers compose multi-step agents with "
-                    "memory, retrieval, and guardrails in a single configuration file."
+                    "memory, retrieval, and guardrails in a single configuration file.",
+                    source_url=demo_url,
                 ),
             )
         )
     if "research" not in represented:
+        demo_url = "https://example.com/sparse-moe-scaling"
         samples.append(
             NewsletterArticle(
                 title="Scaling laws for sparse mixture-of-experts at inference time",
-                url="https://example.com/sparse-moe-scaling",
+                url=demo_url,
                 source_name="ArXiv",
                 published_at=published,
                 article_type=ArticleType.RESEARCH,
@@ -164,15 +215,17 @@ def _demo_articles_for_missing_sections(
                 actionability=Actionability.INFORMATIONAL,
                 enrichment=_demo_enrichment(
                     "Researchers report predictable quality gains when routing "
-                    "tokens through wider expert pools under fixed latency budgets."
+                    "tokens through wider expert pools under fixed latency budgets.",
+                    source_url=demo_url,
                 ),
             )
         )
     if "notable_reads" not in represented:
+        demo_url = "https://example.com/retrieval-quality-agents"
         samples.append(
             NewsletterArticle(
                 title="Why retrieval quality matters more than model size for agents",
-                url="https://example.com/retrieval-quality-agents",
+                url=demo_url,
                 source_name="Simon Willison",
                 published_at=published,
                 article_type=ArticleType.BLOG,
@@ -181,7 +234,8 @@ def _demo_articles_for_missing_sections(
                 actionability=Actionability.MONITOR,
                 enrichment=_demo_enrichment(
                     "Practitioner notes argue that grounded context beats raw "
-                    "parameter count for reliable tool-using workflows."
+                    "parameter count for reliable tool-using workflows.",
+                    source_url=demo_url,
                 ),
             )
         )
@@ -214,14 +268,33 @@ def _to_classification_input(feed: Feed, article: Article) -> ClassificationInpu
     )
 
 
+def _select_preview_feeds(
+    feeds: list[Feed],
+    *,
+    max_feeds: int,
+    rss_only: bool,
+) -> list[Feed]:
+    selected: list[Feed] = []
+    for feed in feeds:
+        if not feed.is_enabled:
+            continue
+        if feed.technology_domain is not None and not feed.technology_domain.is_enabled:
+            continue
+        if rss_only and feed.fetch_kind != FetchKind.RSS:
+            continue
+        selected.append(feed)
+        if len(selected) >= max_feeds:
+            break
+    return selected
+
+
 def main() -> None:
     args = parse_args()
     settings = get_settings()
     configure_logging(level=logging.INFO)
 
-    candidate_filter = CandidateFilterService()
+    candidate_filter = _build_candidate_filter(include_processed=args.include_processed)
     classification_provider = OpenAIClassificationProvider(settings=settings)
-    enrichment_provider = OpenAIEditorialEnrichmentProvider(settings=settings)
     selection_policy = SelectionPolicy()
     acquisition_factory = AcquisitionFactory()
     renderer = NewsletterRenderer()
@@ -233,9 +306,11 @@ def main() -> None:
     with SessionLocal() as db:
         feed_repository = FeedRepository(db)
         article_repository = ArticleRepository(db)
-        feeds = _select_enabled_feeds(feed_repository.list(), args.max_feeds)
-        if args.rss_only:
-            feeds = [feed for feed in feeds if feed.fetch_kind == FetchKind.RSS]
+        feeds = _select_preview_feeds(
+            feed_repository.list(),
+            max_feeds=args.max_feeds,
+            rss_only=args.rss_only,
+        )
         print(f"Selected feeds: {len(feeds)}")
 
         for feed in feeds:
@@ -311,14 +386,33 @@ def main() -> None:
 
         for pending in pending_evaluations:
             selection = selection_by_id.get(pending.article_id)
-            if selection is None or selection.tier != SelectionTier.SELECTED_FOR_ENRICHMENT:
+            if selection is None or selection.tier == SelectionTier.DISCARD:
                 continue
 
             classification = classifications_by_id[pending.article_id]
-            enrichment = enrichment_provider.enrich(
-                article=pending.article_data,
-                classification=classification,
-            )
+            try:
+                classified = classified_article_from_pipeline(
+                    source_name=pending.feed.name or "",
+                    url=pending.article_data.url,
+                    published_at=pending.article_data.published_at,
+                    summary=pending.article_data.summary,
+                    content=pending.article_data.content,
+                    classification=classification,
+                )
+                enrichment = enrich_article(classified, settings=settings)
+            except Exception as exc:
+                logger.exception(
+                    "Enrichment failed for article_id=%s url=%s error=%s",
+                    pending.article_id,
+                    pending.article_data.url,
+                    exc,
+                )
+                print(
+                    f"    skip (enrichment failed): "
+                    f"{pending.article_data.title[:60]} ({type(exc).__name__})"
+                )
+                continue
+
             domain_name = (
                 pending.feed.technology_domain.name
                 if pending.feed.technology_domain is not None
@@ -340,6 +434,7 @@ def main() -> None:
                 f"    include: {pending.article_data.title[:70]} "
                 f"[type={classification.article_type.value}, "
                 f"severity={classification.severity.value}, "
+                f"tier={selection.tier.value}, "
                 f"domain={domain_name or 'n/a'}]"
             )
 
@@ -353,7 +448,7 @@ def main() -> None:
 
     render_input = NewsletterRenderInput(
         articles=included_articles,
-        config=NewsletterRenderConfig(generated_at=datetime.now(UTC)),
+        config=NewsletterRenderConfig(generated_at=datetime.now().astimezone()),
     )
     html_output = renderer.render(render_input)
     output_path = args.output.resolve()

@@ -12,6 +12,7 @@ from app.editorial.classification.enums import (
     ArticleType,
     Severity,
 )
+from app.editorial.enrichment.models import EnrichedArticle
 from app.editorial.newsletter.models import (
     NewsletterArticle,
     NewsletterRenderConfig,
@@ -103,7 +104,8 @@ class NewsletterRenderer:
             output,
             _build_summary_paragraph(stats, config.summary_signature),
         )
-        output = output.replace("06-Jul-2026", _format_header_date(generated_at), 1)
+        formatted_date = _format_header_date(generated_at)
+        output = output.replace("06-Jul-2026", formatted_date)
         output = output.replace(
             "http://localhost:5173/feed-alerts/",
             config.dashboard_url,
@@ -205,10 +207,15 @@ class NewsletterRenderer:
         kind: _SectionKind,
     ) -> str:
         meta = _SECTION_META[kind]
-        description = article.enrichment.key_points[0]
-        using_real_image = bool(article.image_url)
-        image_src = article.image_url or self._placeholder_image_src
-        image_alt = article.title if using_real_image else meta["placeholder_alt"]
+        enrichment_html = _render_enrichment_body(article.enrichment)
+        read_url = _primary_read_url(article)
+        image_block = ""
+        if article.image_url:
+            image_block = (
+                f'<img src="{_escape(article.image_url)}" alt="{_escape(article.title)}" '
+                'width="240" style="display:block;border:0;outline:none;margin-bottom:12px;'
+                'height:auto;max-width:240px;width:45%;" />'
+            )
         divider_class = "td-override divider-rule"
         divider_style = (
             "background-color:#f9f9f9;padding:14px 0;border-bottom:1px solid #edebe9;vertical-align:middle;"
@@ -237,18 +244,104 @@ class NewsletterRenderer:
                 <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f9f9f9" style="background-color:#f9f9f9;">
                   <tr>
                     <td style="vertical-align:middle;padding:0 8px 0 0;">
-                      <img src="{_escape(image_src)}" alt="{_escape(image_alt)}" width="240" style="display:block;border:0;outline:none;margin-bottom:12px;height:auto;max-width:240px;width:45%;" />
-                      <a href="{_escape(article.url)}" class="blue-link" style="font-size:15px;color:#000000;text-decoration:none;font-weight:600;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">{_escape(article.title)}</a>{urgency_badge}
+                      {image_block}
+                      <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" class="blue-link" style="font-size:15px;color:#000000;text-decoration:none;font-weight:600;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">{_escape(article.title)}</a>{urgency_badge}
                       <div style="font-size:10px;color:#888888;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-top:3px;">{_escape(_format_source_line(article))}{domain_tag}</div>
-                      <div style="font-size:12px;color:#555555;line-height:1.55;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-top:6px;">{_escape(description)}</div>
+                      <div style="font-size:12px;color:#555555;line-height:1.55;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-top:6px;">{enrichment_html}</div>
                       <div style="margin-top:10px;">
-                        <a href="{_escape(article.url)}" style="font-size:13px;color:#000000;text-decoration:none;font-weight:600;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Read article &#8594;</a>
+                        <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#000000;text-decoration:none;font-weight:600;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Read article &#8594;</a>
                       </div>
                     </td>
                   </tr>
                 </table>
               </td>
             </tr>"""
+
+
+def _primary_read_url(article: NewsletterArticle) -> str:
+    article_url = article.url.strip()
+    if article_url:
+        return article_url
+    for source_url in article.enrichment.source_urls:
+        candidate = source_url.strip()
+        if candidate:
+            return candidate
+    return article.url
+
+
+def _render_enrichment_body(enrichment: EnrichedArticle) -> str:
+    parts: list[str] = [
+        (
+            '<div style="font-size:13px;color:#333333;line-height:1.55;'
+            "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+            f"{_escape(enrichment.tldr)}</div>"
+        )
+    ]
+
+    why = enrichment.why_it_matters
+    audience_blocks = [
+        ("Executive", why.executive),
+        ("Technical Leadership", why.technical_leadership),
+        ("Engineering", why.engineering),
+    ]
+    audience_html = "".join(
+        (
+            '<div style="margin-top:6px;font-size:11px;color:#555555;line-height:1.5;'
+            "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+            f'<span style="font-weight:600;color:#444444;">{_escape(label)}:</span> '
+            f"{_escape(text)}</div>"
+        )
+        for label, text in audience_blocks
+    )
+    parts.append(
+        '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #edebe9;">'
+        '<div style="font-size:9px;font-weight:600;color:#666666;letter-spacing:0.1em;'
+        "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
+        'margin-bottom:4px;">Why it matters</div>'
+        f"{audience_html}</div>"
+    )
+
+    if enrichment.key_details:
+        detail_items = "".join(
+            (
+                "<li style=\"margin:0 0 4px 0;font-size:11px;color:#555555;line-height:1.45;"
+                "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+                f"<strong>{_escape(detail.label)}:</strong> {_escape(detail.value)}</li>"
+            )
+            for detail in enrichment.key_details
+        )
+        parts.append(
+            '<div style="margin-top:10px;">'
+            '<div style="font-size:9px;font-weight:600;color:#666666;letter-spacing:0.1em;'
+            "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
+            'margin-bottom:4px;">Key details</div>'
+            f'<ul style="margin:0;padding-left:16px;">{detail_items}</ul></div>'
+        )
+
+    if enrichment.recommended_action:
+        parts.append(
+            '<div style="margin-top:10px;padding:8px 10px;background-color:#fff4e5;'
+            "border:1px solid #f0c987;border-radius:4px;font-size:11px;color:#5c3b00;"
+            "line-height:1.45;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+            '<span style="font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">'
+            "Recommended action:</span> "
+            f"{_escape(enrichment.recommended_action)}</div>"
+        )
+
+    if enrichment.tags:
+        tag_spans = "".join(
+            (
+                '<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 7px;'
+                "background-color:#eeeeee;color:#555555;font-size:9px;font-weight:600;"
+                "letter-spacing:0.04em;border-radius:2px;"
+                "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+                f"{_escape(tag)}</span>"
+            )
+            for tag in enrichment.tags
+        )
+        parts.append(f'<div style="margin-top:10px;">{tag_spans}</div>')
+
+    return "".join(parts)
 
 
 def _group_articles(
@@ -390,7 +483,10 @@ def _build_greeting_body(articles: list[NewsletterArticle]) -> str:
 
 
 def _format_header_date(value: datetime) -> str:
-    localized = value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    if value.tzinfo is None:
+        localized = value.replace(tzinfo=UTC).astimezone()
+    else:
+        localized = value.astimezone()
     return localized.strftime("%d-%b-%Y")
 
 

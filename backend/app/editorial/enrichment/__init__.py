@@ -4,6 +4,7 @@ from app.editorial.enrichment.models import (
     ClassifiedArticle,
     EnrichedArticle,
     KeyDetail,
+    classified_article_from_pipeline,
 )
 from app.editorial.enrichment.prompts import (
     build_enrichment_messages,
@@ -15,6 +16,7 @@ __all__ = [
     "ClassifiedArticle",
     "EnrichedArticle",
     "KeyDetail",
+    "classified_article_from_pipeline",
     "build_enrichment_messages",
     "build_enrichment_user_content",
     "enrich_article",
