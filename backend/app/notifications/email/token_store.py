@@ -41,6 +41,28 @@ def token_url(settings: Settings) -> str:
     return f"{authority(settings)}/oauth2/v2.0/token"
 
 
+def post_token_request(settings: Settings, data: dict) -> requests.Response:
+    """POST to the Azure token endpoint, omitting secret for public/SPA clients."""
+    payload = dict(data)
+    if settings.azure_client_secret and not settings.azure_graph_public_client:
+        payload["client_secret"] = settings.azure_client_secret
+
+    response = requests.post(
+        token_url(settings), data=payload, timeout=settings.graph_timeout_seconds
+    )
+    if (
+        response.status_code != 200
+        and not settings.azure_graph_public_client
+        and settings.azure_client_secret
+        and "700025" in response.text
+    ):
+        payload.pop("client_secret", None)
+        response = requests.post(
+            token_url(settings), data=payload, timeout=settings.graph_timeout_seconds
+        )
+    return response
+
+
 def _token_path(settings: Settings) -> Path:
     return Path(settings.graph_token_cache_path)
 
@@ -127,16 +149,13 @@ def _refresh_access_token(token_data: dict, settings: Settings) -> dict:
 
     data = {
         "client_id": settings.azure_client_id,
-        "client_secret": settings.azure_client_secret,
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "scope": SCOPE,
     }
 
     try:
-        response = requests.post(
-            token_url(settings), data=data, timeout=settings.graph_timeout_seconds
-        )
+        response = post_token_request(settings, data)
     except requests.RequestException as e:
         raise TokenError(f"Token refresh network error: {e}") from e
 

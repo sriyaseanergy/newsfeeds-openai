@@ -8,7 +8,8 @@ from app.infrastructure.config.settings import get_settings
 from app.infrastructure.logging import configure_logging, get_logger
 from app.notifications.email.graph_auth import (
     ensure_graph_delegated_auth,
-    graph_login_base_url,
+    graph_login_url,
+    graph_token_status,
 )
 from app.notifications.email.oauth_routes import router as graph_oauth_router
 from app.scheduling.scheduler import create_scheduler
@@ -22,25 +23,32 @@ settings = get_settings()
 def _log_graph_login_url_if_needed(resolved_settings) -> None:
     token_path = Path(resolved_settings.graph_token_cache_path)
     if token_path.exists():
+        status = graph_token_status(resolved_settings)
+        if status.get("authenticated"):
+            logger.info(
+                "Graph mail token on file (signed_in_as=%s login_url=%s).",
+                status.get("signed_in_as") or "(unknown)",
+                status.get("login_url"),
+            )
         return
 
-    base_url = graph_login_base_url(resolved_settings)
-    logger.warning("Sign in at: %s/login", base_url)
+    login_url = graph_login_url(resolved_settings)
+    logger.warning("Sign in at: %s", login_url)
 
     redirect_uri = resolved_settings.redirect_uri.strip()
     if not redirect_uri:
         logger.warning(
             "REDIRECT_URI is not set. Configure REDIRECT_URI to match the "
-            "callback route (/callback) and your Azure app registration."
+            "callback route (/callback, or {ROOT_PATH}/callback behind a proxy)."
         )
         return
 
     parsed = urlparse(redirect_uri)
-    if parsed.path.rstrip("/") != "/callback":
+    expected_suffix = "/callback"
+    if not parsed.path.rstrip("/").endswith(expected_suffix):
         logger.warning(
-            "REDIRECT_URI path is %s but the OAuth callback route is /callback. "
-            "Azure app registration must register REDIRECT_URI exactly as "
-            "configured in the environment.",
+            "REDIRECT_URI path is %s but should end with /callback "
+            "(include ROOT_PATH prefix when deployed, e.g. /feed-alerts-api/callback).",
             parsed.path or "/",
         )
 
