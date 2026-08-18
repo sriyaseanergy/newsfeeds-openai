@@ -40,16 +40,20 @@ class ClassificationService:
     def _map_article_to_input(article: Article) -> ClassificationInput:
         source_name = ""
         technology_domain = ""
+        technology_domain_description = None
 
         if article.feed is not None:
             source_name = article.feed.name or ""
             if article.feed.technology_domain is not None:
-                technology_domain = article.feed.technology_domain.name or ""
+                domain = article.feed.technology_domain
+                technology_domain = domain.name or ""
+                technology_domain_description = domain.description
 
         return ClassificationInput(
             title=article.title or "",
             source_name=source_name,
             technology_domain=technology_domain,
+            technology_domain_description=technology_domain_description,
             summary=article.summary,
             content=article.content,
         )

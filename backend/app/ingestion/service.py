@@ -214,6 +214,7 @@ class IngestionService:
             summary=article_data.summary,
             content=article_data.content,
             source_identifier=article_data.source_identifier,
+            image_url=article_data.image_url,
             is_processed=article_data.is_processed,
         )
 

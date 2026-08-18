@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import seanergyIcon from './assets/seanergy-icon.png'
+import seanergyLogo from './assets/seanergy-logo.png'
 import { getMsalInstance, getMsalRedirectUri, loginRequest } from './msalInstance'
 
 const SESSION_KEY = 'feed_alerts_engine_employee_session'
@@ -151,13 +151,12 @@ export default function LoginPage({ onSignedIn }) {
       `}</style>
       <div
         style={{
-          width: 475,
+          width: 420,
           maxWidth: 'calc(100vw - 32px)',
-          minHeight: 425,
           background: C.cardBg,
           border: `1px solid ${C.border}`,
           borderRadius: 16,
-          padding: 42,
+          padding: '42px 42px 28px',
           boxShadow: '0 4px 24px rgba(0, 0, 0, 0.06)',
           display: 'flex',
           flexDirection: 'column',
@@ -165,40 +164,24 @@ export default function LoginPage({ onSignedIn }) {
         }}
       >
         <div style={{ textAlign: 'center', width: '100%' }}>
-          <div
+          <img
+            src={seanergyLogo}
+            alt="seanergy.ai"
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
+              display: 'block',
+              height: 48,
+              width: 'auto',
+              margin: '0 auto',
+              objectFit: 'contain',
             }}
-          >
-            <img
-              src={seanergyIcon}
-              alt=""
-              width={22}
-              height={22}
-              style={{ display: 'block', objectFit: 'contain' }}
-            />
-            <span
-              style={{
-                fontSize: 24,
-                fontWeight: 600,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.2,
-              }}
-            >
-              <span style={{ color: C.text }}>seanergy</span>
-              <span style={{ color: C.accentGreen }}>.ai</span>
-            </span>
-          </div>
+          />
           <div
             style={{
-              marginTop: 6,
-              fontSize: 13,
+              marginTop: 8,
+              fontSize: 18,
               fontWeight: 500,
               letterSpacing: '2px',
-              color: C.subtitle,
+              color: "#788195",
             }}
           >
             SeaSignal
@@ -208,14 +191,14 @@ export default function LoginPage({ onSignedIn }) {
         <div
           style={{
             width: '100%',
-            marginTop: 42,
+            marginTop: 50,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             flex: 1,
           }}
         >
-          <h1
+          {/* <h1
             style={{
               fontSize: 26,
               fontWeight: 600,
@@ -226,12 +209,12 @@ export default function LoginPage({ onSignedIn }) {
             }}
           >
             Sign in
-          </h1>
+          </h1> */}
           <p
             style={{
               fontSize: 16,
               color: C.muted,
-              lineHeight: 1.5,
+              lineHeight: 1,
               textAlign: 'center',
               maxWidth: 340,
               marginBottom: 28,
@@ -251,7 +234,7 @@ export default function LoginPage({ onSignedIn }) {
                 borderRadius: 10,
                 border: `1px solid ${C.warnBorder}`,
                 background: C.warnBg,
-                lineHeight: 1.45,
+                lineHeight: 1,
                 textAlign: 'center',
               }}
             >
@@ -286,10 +269,10 @@ export default function LoginPage({ onSignedIn }) {
             }}
           >
             <MicrosoftLogo />
-            {busy ? 'Signing in...' : 'Sign in with Microsoft'}
+            Sign in with Microsoft
           </button>
 
-          {error && (
+          {/* {error && (
             <div
               style={{
                 width: '100%',
@@ -306,19 +289,19 @@ export default function LoginPage({ onSignedIn }) {
             >
               {error}
             </div>
-          )}
+          )} */}
         </div>
 
         <p
           style={{
-            marginTop: 32,
+            marginTop: 20,
             fontSize: 13,
-            color: C.subtitle,
+            color: "#9aa1b0",
             textAlign: 'center',
             width: '100%',
           }}
         >
-          © seanergy.ai group. All rights reserved
+          © Seanergy.ai group. All rights reserved
         </p>
       </div>
     </div>

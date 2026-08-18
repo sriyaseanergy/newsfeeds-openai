@@ -67,3 +67,11 @@ class EditorialWindowRule(CandidateRule):
             )
         return None
 
+class AlreadyProcessedRule(CandidateRule):
+    def evaluate(self, article: Article) -> CandidateFilterResult | None:
+        if article.is_processed:
+            return CandidateFilterResult(
+                decision=CandidateDecision.SKIP,
+                reason="already_processed",
+            )
+        return None

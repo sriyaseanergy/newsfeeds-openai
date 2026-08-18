@@ -1,5 +1,4 @@
 from collections import defaultdict
-from dataclasses import dataclass
 
 from pydantic import ValidationError
 
@@ -17,18 +16,6 @@ from app.editorial.classification.provider import ClassificationProvider
 from app.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class _PromptTechnologyDomain:
-    """
-    Minimal domain context used only for prompt selection.
-
-    Keeps prompt orchestration independent from ORM instances.
-    """
-
-    name: str
-    description: str | None = None
 
 
 class OpenAIClassificationProvider(ClassificationProvider):
@@ -51,7 +38,7 @@ class OpenAIClassificationProvider(ClassificationProvider):
             ↓
         chunk by CLASSIFICATION_BATCH_SIZE
             ↓
-        PromptFactory (domain prompt + batch payload)
+        PromptFactory (batch payload)
             ↓
         OpenAIClient (BatchedClassificationResponse)
             ↓
@@ -77,14 +64,7 @@ class OpenAIClassificationProvider(ClassificationProvider):
 
         logger.info("OpenAI classification request started.")
 
-        domain_context = _PromptTechnologyDomain(
-            name=classification_input.technology_domain,
-        )
-
-        messages = self.prompt_factory.build_messages(
-            domain_context,
-            classification_input,
-        )
+        messages = self.prompt_factory.build_messages(classification_input)
 
         try:
             classification = self.openai_client.parse_response(
@@ -155,11 +135,7 @@ class OpenAIClassificationProvider(ClassificationProvider):
             for item in chunk
         ]
 
-        domain_context = _PromptTechnologyDomain(name=domain_name)
-        messages = self.prompt_factory.build_batch_messages(
-            domain_context,
-            batch_payload,
-        )
+        messages = self.prompt_factory.build_batch_messages(batch_payload)
 
         logger.info(
             "OpenAI batch classification request started "

@@ -1,13 +1,23 @@
-from app.editorial.enrichment.models import EditorialEnrichment
-from app.editorial.enrichment.prompt import build_enrichment_prompt
-from app.editorial.enrichment.provider import (
-    EditorialEnrichmentProvider,
-    OpenAIEditorialEnrichmentProvider,
+from app.editorial.enrichment.enricher import enrich_article
+from app.editorial.enrichment.models import (
+    AudienceSummary,
+    ClassifiedArticle,
+    EnrichedArticle,
+    KeyDetail,
+    classified_article_from_pipeline,
+)
+from app.editorial.enrichment.prompts import (
+    build_enrichment_messages,
+    build_enrichment_user_content,
 )
 
 __all__ = [
-    "build_enrichment_prompt",
-    "EditorialEnrichment",
-    "EditorialEnrichmentProvider",
-    "OpenAIEditorialEnrichmentProvider",
+    "AudienceSummary",
+    "ClassifiedArticle",
+    "EnrichedArticle",
+    "KeyDetail",
+    "classified_article_from_pipeline",
+    "build_enrichment_messages",
+    "build_enrichment_user_content",
+    "enrich_article",
 ]

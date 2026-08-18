@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     weekly_digest_day: str = "Friday"
     weekly_digest_time: str = "08:00"
     scheduler_enabled: bool = True
+    digest_max_articles_per_feed: int = 10
 
     # Employee SPA authentication. SPA -> Azure AD ID token -> authenticated user.
     # Env: AZURE_TENANT_ID, AZURE_AUTH_CLIENT_ID
