@@ -1,17 +1,11 @@
 import { PublicClientApplication } from '@azure/msal-browser'
 
 function tenantId() {
-  return (
-    import.meta.env.VITE_AZURE_TENANT_ID ||
-    ''
-  ).trim()
+  return (import.meta.env.VITE_AZURE_TENANT_ID || '').trim()
 }
 
 function clientId() {
-  return (
-    import.meta.env.VITE_AZURE_CLIENT_ID ||
-    ''
-  ).trim()
+  return (import.meta.env.VITE_AZURE_CLIENT_ID || '').trim()
 }
 
 /** Must match a redirect URI registered on the Azure AD app (include SPA base path if any). */
