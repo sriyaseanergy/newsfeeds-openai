@@ -23,6 +23,10 @@ class TechnologyDomainService:
             raise TechnologyDomainDuplicateNameError(
                 f"Technology domain with name '{payload.name}' already exists."
             )
+        if self.repository.get_by_slug(payload.slug):
+            raise TechnologyDomainDuplicateNameError(
+                f"Technology domain with slug '{payload.slug}' already exists."
+            )
 
         try:
             return self.repository.create(payload)
@@ -52,6 +56,13 @@ class TechnologyDomainService:
             if existing is not None and existing.id != domain.id:
                 raise TechnologyDomainDuplicateNameError(
                     f"Technology domain with name '{payload.name}' already exists."
+                )
+
+        if payload.slug is not None:
+            existing = self.repository.get_by_slug(payload.slug)
+            if existing is not None and existing.id != domain.id:
+                raise TechnologyDomainDuplicateNameError(
+                    f"Technology domain with slug '{payload.slug}' already exists."
                 )
 
         try:

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from app.api.auth.admin_emails import is_feed_source_admin, parse_feed_source_admin_emails
 from app.api.auth.authorization import can_manage_feed_sources, require_feed_source_manager
-from app.api.auth.dependencies import get_current_employee
+from app.api.auth.dependencies import get_current_employee, get_user_service
 from app.api.auth.exceptions import InvalidIdTokenError, MissingEmailClaimError
 from app.api.auth.models import AuthenticatedUser
 from app.api.auth.router import router as auth_router
+from app.catalog.user.schemas import EntraIdentity
 from app.core.settings import Settings
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 
 TENANT_ID = "647119b9-2120-453d-ab27-e02884c15a1b"
 CLIENT_ID = "6442ff78-2021-4ee3-8dd3-b0b04cae8066"
+OBJECT_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 
 def _settings(admin_emails: str = "admin@example.com") -> Settings:
@@ -47,6 +49,8 @@ def _claims(
         "aud": CLIENT_ID,
         "exp": now - 3600 if expired else now + 3600,
         "name": name,
+        "oid": OBJECT_ID,
+        "tid": TENANT_ID,
     }
     if email is not None:
         payload["email"] = email
@@ -58,9 +62,15 @@ def _claims(
 
 
 @pytest.fixture
-def auth_client() -> TestClient:
+def mock_user_service() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def auth_client(mock_user_service: MagicMock) -> TestClient:
     app = FastAPI()
     app.include_router(auth_router)
+    app.dependency_overrides[get_user_service] = lambda: mock_user_service
     return TestClient(app)
 
 
@@ -130,7 +140,10 @@ def test_require_feed_source_manager_returns_403_for_non_admin() -> None:
     }
 
 
-def test_create_session_success_with_email_claim(auth_client: TestClient) -> None:
+def test_create_session_success_with_email_claim(
+    auth_client: TestClient,
+    mock_user_service: MagicMock,
+) -> None:
     claims = _claims(email="jane@example.com", name="Jane Doe")
     with patch("app.api.auth.service.get_settings", return_value=_settings("jane@example.com")):
         with patch(
@@ -145,6 +158,13 @@ def test_create_session_success_with_email_claim(auth_client: TestClient) -> Non
     assert body["employee"]["designation"] == "Employee"
     assert body["employee"]["emp_no"] is None
     assert body["employee"]["can_manage_feed_sources"] is True
+    mock_user_service.record_login.assert_called_once()
+    identity = mock_user_service.record_login.call_args.args[0]
+    assert isinstance(identity, EntraIdentity)
+    assert identity.oid == OBJECT_ID
+    assert identity.tid == TENANT_ID
+    assert identity.email == "jane@example.com"
+    assert identity.display_name == "Jane Doe"
 
 
 def test_create_session_success_with_preferred_username_fallback(
@@ -218,7 +238,10 @@ def test_auth_me_returns_can_manage_flag(auth_client: TestClient) -> None:
     assert response.json()["can_manage_feed_sources"] is True
 
 
-def test_authorization_does_not_query_mywork(auth_client: TestClient) -> None:
+def test_authorization_does_not_query_mywork(
+    auth_client: TestClient,
+    mock_user_service: MagicMock,
+) -> None:
     with patch("app.api.auth.service.get_settings", return_value=_settings("")):
         with patch(
             "app.api.auth.authenticator.AzureAdIdTokenValidator.validate",
@@ -230,3 +253,4 @@ def test_authorization_does_not_query_mywork(auth_client: TestClient) -> None:
             ):
                 response = auth_client.post("/auth/session", json={"id_token": "token"})
     assert response.status_code == 200
+    mock_user_service.record_login.assert_called_once()

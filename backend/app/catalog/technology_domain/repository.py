@@ -11,7 +11,9 @@ class TechnologyDomainRepository:
         self.db = db
 
     def create(self, payload: TechnologyDomainCreate) -> TechnologyDomain:
-        domain = TechnologyDomain(**payload.model_dump())
+        data = payload.model_dump()
+        is_enabled = data.pop("is_enabled")
+        domain = TechnologyDomain(**data, is_active=is_enabled)
         self.db.add(domain)
         self.db.commit()
         self.db.refresh(domain)
@@ -25,6 +27,10 @@ class TechnologyDomainRepository:
         statement = select(TechnologyDomain).where(TechnologyDomain.name == name)
         return self.db.execute(statement).scalar_one_or_none()
 
+    def get_by_slug(self, slug: str) -> TechnologyDomain | None:
+        statement = select(TechnologyDomain).where(TechnologyDomain.slug == slug)
+        return self.db.execute(statement).scalar_one_or_none()
+
     def list(self) -> list[TechnologyDomain]:
         statement = select(TechnologyDomain).order_by(TechnologyDomain.created_at.desc())
         return list(self.db.execute(statement).scalars().all())
@@ -33,6 +39,8 @@ class TechnologyDomainRepository:
         self, domain: TechnologyDomain, payload: TechnologyDomainUpdate
     ) -> TechnologyDomain:
         update_data = payload.model_dump(exclude_unset=True)
+        if "is_enabled" in update_data:
+            update_data["is_active"] = update_data.pop("is_enabled")
         for field, value in update_data.items():
             setattr(domain, field, value)
 
