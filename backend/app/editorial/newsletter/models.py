@@ -32,7 +32,7 @@ class NewsletterRenderConfig(BaseModel):
 
     header_subtitle: str = "Intelligence Briefing"
     summary_signature: str = "— The Editorial Intelligence Desk"
-    dashboard_url: str = "http://localhost:5173/feed-alerts/"
+    dashboard_url: str = "https://uat.seanergy.ai/feed-alerts/login"
     generated_at: datetime | None = None
 
 

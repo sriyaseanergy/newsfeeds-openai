@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import math
 import re
 from datetime import UTC, datetime
 from enum import Enum
@@ -23,12 +22,13 @@ _TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "sample_email_preview.html"
 )
 
+_DASHBOARD_URL_PLACEHOLDER = "__DASHBOARD_URL__"
 _SECTIONS_START = "<!-- Sections -->"
 _SECTIONS_END = "<!-- CTA Buttons -->"
-
-_WORDS_PER_MINUTE = 200
 _URGENCY_BADGE_LABEL = "Action Needed"
 _PINNED_SECTION_TITLE = "NEEDS YOUR ATTENTION"
+_MAX_SIGNAL_BULLETS = 5
+_MAX_KEY_POINTS = 3
 
 
 class _SectionKind(str, Enum):
@@ -47,28 +47,16 @@ _SECTION_ORDER: tuple[_SectionKind, ...] = (
 
 _SECTION_META: dict[_SectionKind, dict[str, str]] = {
     _SectionKind.CRITICAL: {
-        "icon_text": "!!",
         "title": _PINNED_SECTION_TITLE,
-        "panel_heading": "Priority Alerts",
-        "placeholder_alt": "Critical alert",
     },
     _SectionKind.RELEASES: {
-        "icon_text": "RE",
         "title": "RELEASES",
-        "panel_heading": "Top Sources & Intel",
-        "placeholder_alt": "Release announcement",
     },
     _SectionKind.RESEARCH: {
-        "icon_text": "RS",
         "title": "RESEARCH",
-        "panel_heading": "Top Sources & Intel",
-        "placeholder_alt": "Research paper",
     },
     _SectionKind.NOTABLE_READS: {
-        "icon_text": "NR",
         "title": "NOTABLE READS",
-        "panel_heading": "Top Sources & Intel",
-        "placeholder_alt": "Article",
     },
 }
 
@@ -76,18 +64,15 @@ _SECTION_META: dict[_SectionKind, dict[str, str]] = {
 class NewsletterRenderer:
     def __init__(self, template_path: Path | None = None) -> None:
         self.template_path = template_path or _TEMPLATE_PATH
-        self._placeholder_image_src = ""
 
     def render(self, render_input: NewsletterRenderInput) -> str:
         template = self.template_path.read_text(encoding="utf-8")
-        self._placeholder_image_src = _extract_placeholder_image(template)
-
         grouped = _group_articles(render_input.articles)
         sections_html = self._render_all_sections(grouped)
+        signal_html = _render_todays_signal(render_input.articles)
 
         config = render_input.config
         generated_at = config.generated_at or datetime.now(UTC)
-        stats = _compute_stats(render_input.articles, grouped)
 
         output = _replace_between(
             template,
@@ -100,15 +85,12 @@ class NewsletterRenderer:
             output,
             _build_greeting_body(render_input.articles),
         )
-        output = _insert_after_greeting(
-            output,
-            _build_summary_paragraph(stats, config.summary_signature),
-        )
+        output = _insert_after_greeting(output, signal_html)
         formatted_date = _format_header_date(generated_at)
         output = output.replace("06-Jul-2026", formatted_date)
         output = output.replace(
-            "http://localhost:5173/feed-alerts/",
-            config.dashboard_url,
+            _DASHBOARD_URL_PLACEHOLDER,
+            _escape(config.dashboard_url),
         )
         output = re.sub(
             r"<title>.*?</title>",
@@ -117,15 +99,9 @@ class NewsletterRenderer:
             count=1,
         )
 
-        for stale_marker in (
-            "FRONTIER AI",
-            "EXPERT CONTEXT",
-            "ENGINEERING",
-            "curated highlights across frontier AI",
-        ):
-            if stale_marker in output:
-                msg = f"Rendered output still contains stale sample marker: {stale_marker}"
-                raise RuntimeError(msg)
+        if "localhost" in output.lower():
+            msg = "Rendered output still contains a localhost reference."
+            raise RuntimeError(msg)
 
         return output
 
@@ -156,47 +132,19 @@ class NewsletterRenderer:
         meta = _SECTION_META[kind]
         cards_html = "".join(self._render_card(article, kind) for article in articles)
         return f"""
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table" bgcolor="#ffffff" style="background-color:#ffffff;margin-top:8px;">
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table" bgcolor="#ffffff" style="background-color:#ffffff;margin-top:28px;">
       <tr>
-        <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;">
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table" bgcolor="#ffffff" style="background-color:#ffffff;">
-      <tr>
-        <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding-top:36px;padding-bottom:0;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff">
-            <tr>
-              <td width="48" valign="top" style="padding-right:12px;">
-                <div style="width:40px;height:40px;background-color:#f0f0f0;border-radius:50%;text-align:center;line-height:40px;font-size:12px;font-weight:700;color:#000000;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">{_escape(meta["icon_text"])}</div>
-              </td>
-              <td valign="top">
-                <span style="font-size:24px;font-weight:700;color:#1a1a1a;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;letter-spacing:-0.01em;line-height:1.2;display:block;">{_escape(meta["title"])}</span>
-                <div style="font-size:13px;font-weight:500;color:#555555;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;padding-top:4px;">{len(articles)} Insights</div>
-              </td>
-            </tr>
-          </table>
+        <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding:0 0 12px 0;border-bottom:2px solid #000000;">
+          <span style="font-size:18px;font-weight:700;color:#1a1a1a;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;letter-spacing:-0.01em;line-height:1.3;">
+            {_escape(meta["title"])} &middot; {len(articles)}
+          </span>
         </td>
       </tr>
       <tr>
-        <td bgcolor="#ffffff" style="background-color:#ffffff;height:28px;line-height:28px;font-size:1px;">&nbsp;</td>
-      </tr>
-    </table>
-    <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table"
-      bgcolor="#f9f9f9" style="background-color:#f9f9f9;margin-top:0;margin-bottom:8px;border:1px solid #e0e0e0;border-radius:8px;">
-      <tr>
-        <td bgcolor="#f9f9f9" class="td-override" style="background-color:#f9f9f9;padding:18px 18px 12px 18px;border-radius:8px 8px 0 0;">
-          <div style="font-size:9px;font-weight:600;color:#666666;
-            font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;letter-spacing:0.12em;text-transform:uppercase;">
-            {_escape(meta["panel_heading"])}
-          </div>
-        </td>
-      </tr>
-      <tr>
-        <td bgcolor="#f9f9f9" class="td-override" style="background-color:#f9f9f9;padding:0 18px 8px 18px;">
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table" bgcolor="#f9f9f9" style="background-color:#f9f9f9;">
+        <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding:16px 0 0 0;">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" class="content-table" bgcolor="#ffffff" style="background-color:#ffffff;">
             {cards_html}
           </table>
-        </td>
-      </tr>
-    </table>
         </td>
       </tr>
     </table>"""
@@ -206,22 +154,11 @@ class NewsletterRenderer:
         article: NewsletterArticle,
         kind: _SectionKind,
     ) -> str:
-        meta = _SECTION_META[kind]
-        enrichment_html = _render_enrichment_body(article.enrichment)
+        enrichment_html = _render_enrichment_body(article)
         read_url = _primary_read_url(article)
-        image_block = ""
-        if article.image_url:
-            image_block = (
-                f'<img src="{_escape(article.image_url)}" alt="{_escape(article.title)}" '
-                'width="240" style="display:block;border:0;outline:none;margin-bottom:12px;'
-                'height:auto;max-width:240px;width:45%;" />'
-            )
-        divider_class = "td-override divider-rule"
-        divider_style = (
-            "background-color:#f9f9f9;padding:14px 0;border-bottom:1px solid #edebe9;vertical-align:middle;"
-        )
+        meta_line = _format_meta_line(article)
         urgency_badge = ""
-        if _needs_urgency_badge(article):
+        if kind is _SectionKind.CRITICAL and _needs_urgency_badge(article):
             urgency_badge = (
                 '<span style="display:inline-block;margin-left:8px;background-color:#fff4e5;'
                 'color:#8a4b00;font-size:9px;font-weight:700;letter-spacing:0.08em;'
@@ -229,31 +166,20 @@ class NewsletterRenderer:
                 'border:1px solid #f0c987;font-family:\'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif;">'
                 f"{_escape(_URGENCY_BADGE_LABEL)}</span>"
             )
-        domain_tag = ""
-        if article.technology_domain.strip():
-            domain_tag = (
-                '<span style="display:inline-block;margin-left:8px;color:#999999;font-size:9px;'
-                "font-weight:600;letter-spacing:0.06em;text-transform:uppercase;"
-                'font-family:\'Segoe UI\', Tahoma, Geneva, Verdana, sans-serif;">'
-                f"{_escape(article.technology_domain.strip())}</span>"
-            )
 
         return f"""
             <tr>
-              <td bgcolor="#f9f9f9" class="{divider_class}" style="{divider_style}">
-                <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f9f9f9" style="background-color:#f9f9f9;">
-                  <tr>
-                    <td style="vertical-align:middle;padding:0 8px 0 0;">
-                      {image_block}
-                      <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" class="blue-link" style="font-size:15px;color:#000000;text-decoration:none;font-weight:600;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">{_escape(article.title)}</a>{urgency_badge}
-                      <div style="font-size:10px;color:#888888;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-top:3px;">{_escape(_format_source_line(article))}{domain_tag}</div>
-                      <div style="font-size:12px;color:#555555;line-height:1.55;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-top:6px;">{enrichment_html}</div>
-                      <div style="margin-top:10px;">
-                        <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#000000;text-decoration:none;font-weight:600;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Read article &#8594;</a>
-                      </div>
-                    </td>
-                  </tr>
-                </table>
+              <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding:0 0 24px 0;border-bottom:1px solid #e8e8e8;vertical-align:top;">
+                <div style="font-size:16px;color:#000000;font-weight:700;line-height:1.35;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-bottom:6px;">
+                  {_escape(article.title)}{urgency_badge}
+                </div>
+                <div style="font-size:11px;color:#777777;line-height:1.4;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-bottom:10px;">
+                  {_escape(meta_line)}
+                </div>
+                {enrichment_html}
+                <div style="margin-top:12px;">
+                  <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#000000;text-decoration:none;font-weight:600;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Read more &#8594;</a>
+                </div>
               </td>
             </tr>"""
 
@@ -269,7 +195,8 @@ def _primary_read_url(article: NewsletterArticle) -> str:
     return article.url
 
 
-def _render_enrichment_body(enrichment: EnrichedArticle) -> str:
+def _render_enrichment_body(article: NewsletterArticle) -> str:
+    enrichment = article.enrichment
     parts: list[str] = [
         (
             '<div style="font-size:13px;color:#333333;line-height:1.55;'
@@ -278,70 +205,82 @@ def _render_enrichment_body(enrichment: EnrichedArticle) -> str:
         )
     ]
 
-    why = enrichment.why_it_matters
-    audience_blocks = [
-        ("Executive", why.executive),
-        ("Technical Leadership", why.technical_leadership),
-        ("Engineering", why.engineering),
-    ]
-    audience_html = "".join(
-        (
-            '<div style="margin-top:6px;font-size:11px;color:#555555;line-height:1.5;'
+    why_text = _single_why_it_matters(enrichment)
+    if why_text:
+        parts.append(
+            '<div style="margin-top:10px;">'
+            '<div style="font-size:10px;font-weight:700;color:#666666;letter-spacing:0.08em;'
+            "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
+            'margin-bottom:4px;">Why it matters</div>'
+            '<div style="font-size:12px;color:#444444;line-height:1.5;'
             "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
-            f'<span style="font-weight:600;color:#444444;">{_escape(label)}:</span> '
-            f"{_escape(text)}</div>"
+            f"{_escape(why_text)}</div></div>"
         )
-        for label, text in audience_blocks
-    )
-    parts.append(
-        '<div style="margin-top:10px;padding-top:8px;border-top:1px solid #edebe9;">'
-        '<div style="font-size:9px;font-weight:600;color:#666666;letter-spacing:0.1em;'
-        "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
-        'margin-bottom:4px;">Why it matters</div>'
-        f"{audience_html}</div>"
-    )
 
-    if enrichment.key_details:
-        detail_items = "".join(
+    key_points = _key_point_bullets(enrichment)
+    if key_points:
+        items = "".join(
             (
-                "<li style=\"margin:0 0 4px 0;font-size:11px;color:#555555;line-height:1.45;"
+                "<li style=\"margin:0 0 4px 0;font-size:12px;color:#444444;line-height:1.45;"
                 "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
-                f"<strong>{_escape(detail.label)}:</strong> {_escape(detail.value)}</li>"
+                f"{_escape(point)}</li>"
             )
-            for detail in enrichment.key_details
+            for point in key_points
         )
         parts.append(
             '<div style="margin-top:10px;">'
-            '<div style="font-size:9px;font-weight:600;color:#666666;letter-spacing:0.1em;'
+            '<div style="font-size:10px;font-weight:700;color:#666666;letter-spacing:0.08em;'
             "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
-            'margin-bottom:4px;">Key details</div>'
-            f'<ul style="margin:0;padding-left:16px;">{detail_items}</ul></div>'
+            'margin-bottom:4px;">Key points</div>'
+            f'<ul style="margin:0;padding-left:18px;">{items}</ul></div>'
         )
 
-    if enrichment.recommended_action:
+    if _should_show_suggested_action(article, enrichment):
         parts.append(
-            '<div style="margin-top:10px;padding:8px 10px;background-color:#fff4e5;'
-            "border:1px solid #f0c987;border-radius:4px;font-size:11px;color:#5c3b00;"
+            '<div style="margin-top:10px;padding:8px 10px;background-color:#f7f7f7;'
+            "border-left:3px solid #000000;font-size:12px;color:#333333;"
             "line-height:1.45;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
-            '<span style="font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">'
-            "Recommended action:</span> "
-            f"{_escape(enrichment.recommended_action)}</div>"
+            '<span style="font-weight:700;">Suggested action:</span> '
+            f"{_escape(enrichment.recommended_action.strip())}</div>"
         )
-
-    if enrichment.tags:
-        tag_spans = "".join(
-            (
-                '<span style="display:inline-block;margin:0 6px 4px 0;padding:2px 7px;'
-                "background-color:#eeeeee;color:#555555;font-size:9px;font-weight:600;"
-                "letter-spacing:0.04em;border-radius:2px;"
-                "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
-                f"{_escape(tag)}</span>"
-            )
-            for tag in enrichment.tags
-        )
-        parts.append(f'<div style="margin-top:10px;">{tag_spans}</div>')
 
     return "".join(parts)
+
+
+def _single_why_it_matters(enrichment: EnrichedArticle) -> str:
+    why = enrichment.why_it_matters
+    for candidate in (why.executive, why.technical_leadership, why.engineering):
+        text = candidate.strip()
+        if text:
+            return text
+    return ""
+
+
+def _key_point_bullets(enrichment: EnrichedArticle) -> list[str]:
+    bullets: list[str] = []
+    for detail in enrichment.key_details:
+        label = detail.label.strip()
+        value = detail.value.strip()
+        if label and value:
+            bullets.append(f"{label}: {value}")
+        elif value:
+            bullets.append(value)
+        if len(bullets) >= _MAX_KEY_POINTS:
+            break
+    return bullets
+
+
+def _should_show_suggested_action(
+    article: NewsletterArticle,
+    enrichment: EnrichedArticle,
+) -> bool:
+    action = (enrichment.recommended_action or "").strip()
+    if not action:
+        return False
+    return article.actionability in {
+        Actionability.ACTION_RECOMMENDED,
+        Actionability.IMMEDIATE_ACTION,
+    }
 
 
 def _group_articles(
@@ -365,6 +304,14 @@ def _group_articles(
     return grouped
 
 
+def _section_kind_for_article(article: NewsletterArticle) -> _SectionKind:
+    if article.article_type == ArticleType.RELEASE:
+        return _SectionKind.RELEASES
+    if article.article_type == ArticleType.RESEARCH:
+        return _SectionKind.RESEARCH
+    return _SectionKind.NOTABLE_READS
+
+
 def _is_pinned_security_article(article: NewsletterArticle) -> bool:
     if article.severity == Severity.CRITICAL:
         return True
@@ -380,14 +327,6 @@ def _is_pinned_security_article(article: NewsletterArticle) -> bool:
     }
 
 
-def _section_kind_for_article(article: NewsletterArticle) -> _SectionKind:
-    if article.article_type == ArticleType.RELEASE:
-        return _SectionKind.RELEASES
-    if article.article_type == ArticleType.RESEARCH:
-        return _SectionKind.RESEARCH
-    return _SectionKind.NOTABLE_READS
-
-
 def _needs_urgency_badge(article: NewsletterArticle) -> bool:
     high_severity = article.severity in {Severity.HIGH, Severity.CRITICAL}
     actionable = article.actionability in {
@@ -397,66 +336,73 @@ def _needs_urgency_badge(article: NewsletterArticle) -> bool:
     return high_severity or actionable
 
 
-class _NewsletterStats:
-    def __init__(
-        self,
-        *,
-        total_articles: int,
-        distinct_sources: int,
-        release_count: int,
-        notable_read_count: int,
-        critical_count: int,
-    ) -> None:
-        self.total_articles = total_articles
-        self.distinct_sources = distinct_sources
-        self.release_count = release_count
-        self.notable_read_count = notable_read_count
-        self.critical_count = critical_count
+def _article_signal_score(article: NewsletterArticle) -> int:
+    score = 0
+    if _is_pinned_security_article(article):
+        score += 1000
+    if article.severity == Severity.CRITICAL:
+        score += 500
+    elif article.severity == Severity.HIGH:
+        score += 250
+    elif article.severity == Severity.MEDIUM:
+        score += 80
+    if article.actionability == Actionability.IMMEDIATE_ACTION:
+        score += 300
+    elif article.actionability == Actionability.ACTION_RECOMMENDED:
+        score += 150
+    if article.article_type == ArticleType.RELEASE:
+        score += 90
+    elif article.article_type == ArticleType.RESEARCH:
+        score += 60
+    return score
 
 
-def _compute_stats(
-    articles: list[NewsletterArticle],
-    grouped: dict[_SectionKind, list[NewsletterArticle]],
-) -> _NewsletterStats:
-    return _NewsletterStats(
-        total_articles=len(articles),
-        distinct_sources=len({article.source_name for article in articles}),
-        release_count=len(grouped[_SectionKind.RELEASES]),
-        notable_read_count=len(grouped[_SectionKind.NOTABLE_READS]),
-        critical_count=len(grouped[_SectionKind.CRITICAL]),
+def _render_todays_signal(articles: list[NewsletterArticle]) -> str:
+    if not articles:
+        return ""
+
+    ranked = sorted(
+        articles,
+        key=lambda article: (_article_signal_score(article), article.title.lower()),
+        reverse=True,
     )
+    bullets: list[str] = []
+    for article in ranked:
+        bullet = _signal_bullet(article)
+        if bullet and bullet not in bullets:
+            bullets.append(bullet)
+        if len(bullets) >= _MAX_SIGNAL_BULLETS:
+            break
 
+    if not bullets:
+        return ""
 
-def _build_summary(stats: _NewsletterStats) -> str:
-    base = (
-        f"This edition covers {stats.total_articles} updates across "
-        f"{stats.distinct_sources} sources"
+    items = "".join(
+        (
+            "<li style=\"margin:0 0 6px 0;font-size:13px;color:#333333;line-height:1.5;"
+            "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
+            f"{_escape(bullet)}</li>"
+        )
+        for bullet in bullets
     )
-    if stats.release_count > 0 and stats.notable_read_count > 0:
-        detail = (
-            f"including {stats.release_count} new releases and "
-            f"{stats.notable_read_count} notable reads on AI and security."
-        )
-    elif stats.release_count > 0:
-        detail = f"including {stats.release_count} new releases on AI and security."
-    elif stats.notable_read_count > 0:
-        detail = (
-            f"including {stats.notable_read_count} notable reads on AI and security."
-        )
-    else:
-        detail = "on AI and security."
-    return f"{base} — {detail}"
-
-
-def _build_summary_paragraph(stats: _NewsletterStats, signature: str) -> str:
-    summary = _build_summary(stats)
     return (
-        '<p style="margin:12px 0 0 0;font-size:13px;color:#555555;line-height:1.7;'
-        "font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\">"
-        f"{_escape(summary)}<br />"
-        f'<span style="color:#777777;">{_escape(signature)}</span>'
-        "</p>"
+        '<div style="margin:14px 0 0 0;padding:14px 16px;background-color:#f9f9f9;'
+        "border:1px solid #e8e8e8;border-radius:4px;\">"
+        '<div style="font-size:11px;font-weight:700;color:#000000;letter-spacing:0.08em;'
+        "text-transform:uppercase;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;"
+        'margin-bottom:8px;">Today&rsquo;s signal</div>'
+        f'<ul style="margin:0;padding-left:18px;">{items}</ul></div>'
     )
+
+
+def _signal_bullet(article: NewsletterArticle) -> str:
+    tldr = article.enrichment.tldr.strip()
+    if not tldr:
+        return article.title.strip()
+    first_sentence = re.split(r"(?<=[.!?])\s+", tldr, maxsplit=1)[0].strip()
+    if len(first_sentence) <= 180:
+        return first_sentence
+    return first_sentence[:177].rstrip() + "..."
 
 
 def _build_greeting_body(articles: list[NewsletterArticle]) -> str:
@@ -469,7 +415,10 @@ def _build_greeting_body(articles: list[NewsletterArticle]) -> str:
         key=str.lower,
     )
     if not domains:
-        return "Here is your latest executive intelligence briefing."
+        return (
+            "Here's your latest executive intelligence briefing — "
+            "security alerts, releases, research, and notable reads."
+        )
     if len(domains) == 1:
         domain_phrase = domains[0]
     elif len(domains) == 2:
@@ -477,7 +426,7 @@ def _build_greeting_body(articles: list[NewsletterArticle]) -> str:
     else:
         domain_phrase = ", ".join(domains[:-1]) + f", and {domains[-1]}"
     return (
-        f"Here's what moved across {domain_phrase} this week — "
+        f"Here's what moved across {domain_phrase} — "
         "grouped by security alerts, releases, research, and notable reads."
     )
 
@@ -490,24 +439,34 @@ def _format_header_date(value: datetime) -> str:
     return localized.strftime("%d-%b-%Y")
 
 
-def _format_source_line(article: NewsletterArticle) -> str:
+def _format_meta_line(article: NewsletterArticle) -> str:
+    source = article.source_name.strip() or "Unknown source"
     published = (
-        article.published_at.strftime("%Y-%m-%d")
+        _format_card_date(article.published_at)
         if article.published_at is not None
-        else "unknown"
+        else "Date unknown"
     )
-    return f"{article.source_name} / {published}"
+    category = _format_category(article.technology_domain)
+    return f"{source} · {published} · {category}"
+
+
+def _format_card_date(value: datetime) -> str:
+    if value.tzinfo is None:
+        localized = value.replace(tzinfo=UTC).astimezone()
+    else:
+        localized = value.astimezone()
+    return localized.strftime("%d %b %Y").lstrip("0")
+
+
+def _format_category(technology_domain: str) -> str:
+    domain = technology_domain.strip()
+    if not domain:
+        return "General"
+    return domain.replace("_", " / ").replace("-", " / ")
 
 
 def _escape(value: str) -> str:
     return html.escape(value, quote=True)
-
-
-def _extract_placeholder_image(template: str) -> str:
-    match = re.search(r'<img src="(data:image/[^"]+)" alt="New Update"', template)
-    if match:
-        return match.group(1)
-    return ""
 
 
 def _replace_between(
@@ -533,13 +492,10 @@ def _replace_greeting_paragraph(template: str, greeting_body: str) -> str:
     )
 
 
-def _insert_after_greeting(template: str, summary_paragraph: str) -> str:
+def _insert_after_greeting(template: str, signal_block: str) -> str:
     marker = '</p>\n            </td>\n          </tr>\n\n          <!-- Sections -->'
     if marker not in template:
-        msg = "Could not locate greeting block for summary insertion."
+        msg = "Could not locate greeting block for signal insertion."
         raise RuntimeError(msg)
-    return template.replace(
-        marker,
-        f"</p>\n              {summary_paragraph}\n            </td>\n          </tr>\n\n          <!-- Sections -->",
-        1,
-    )
+    insertion = f"</p>\n              {signal_block}\n            </td>\n          </tr>\n\n          <!-- Sections -->"
+    return template.replace(marker, insertion, 1)
