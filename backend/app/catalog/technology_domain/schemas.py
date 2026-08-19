@@ -1,17 +1,20 @@
+import re
 from datetime import datetime
 from uuid import UUID
 
 from app.catalog.technology_domain.model import TechnologyDomainSchedule
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+_SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
 
 class TechnologyDomainCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=255)
+    slug: str = Field(min_length=1, max_length=255)
     description: str | None = None
     is_enabled: bool = True
-    schedule: TechnologyDomainSchedule = TechnologyDomainSchedule.DAILY
 
     @field_validator("name")
     @classmethod
@@ -21,14 +24,26 @@ class TechnologyDomainCreate(BaseModel):
             raise ValueError("name must not be empty")
         return name
 
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str) -> str:
+        slug = value.strip().lower()
+        if not slug:
+            raise ValueError("slug must not be empty")
+        if not _SLUG_PATTERN.fullmatch(slug):
+            raise ValueError(
+                "slug must contain lowercase letters, numbers, and hyphens only"
+            )
+        return slug
+
 
 class TechnologyDomainUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     is_enabled: bool | None = None
-    schedule: TechnologyDomainSchedule | None = None
 
     @field_validator("name")
     @classmethod
@@ -40,14 +55,38 @@ class TechnologyDomainUpdate(BaseModel):
             raise ValueError("name must not be empty")
         return name
 
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        slug = value.strip().lower()
+        if not slug:
+            raise ValueError("slug must not be empty")
+        if not _SLUG_PATTERN.fullmatch(slug):
+            raise ValueError(
+                "slug must contain lowercase letters, numbers, and hyphens only"
+            )
+        return slug
+
 
 class TechnologyDomainResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: UUID
     name: str
+    slug: str
     description: str | None
     is_enabled: bool
-    schedule: TechnologyDomainSchedule
+    frequency: TechnologyDomainSchedule
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("frequency", mode="before")
+    @classmethod
+    def normalize_frequency(cls, value: object) -> TechnologyDomainSchedule:
+        if isinstance(value, TechnologyDomainSchedule):
+            return value
+        if hasattr(value, "value"):
+            return TechnologyDomainSchedule(str(value.value))
+        return TechnologyDomainSchedule(str(value))
