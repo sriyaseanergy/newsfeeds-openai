@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import jwt
-from app.api.auth.exceptions import InvalidIdTokenError, MissingEmailClaimError
+from app.api.auth.exceptions import (
+    InvalidIdTokenError,
+    MissingEmailClaimError,
+    MissingOidClaimError,
+    MissingTidClaimError,
+)
 from app.core.settings import Settings
 from app.infrastructure.logging import get_logger
 from jwt import PyJWKClient
@@ -97,3 +102,19 @@ class AzureAdIdTokenValidator:
         if local_part:
             return local_part
         return email
+
+    def extract_oid(self, claims: dict[str, object]) -> str:
+        raw_value = claims.get("oid")
+        if isinstance(raw_value, str):
+            oid = raw_value.strip()
+            if oid:
+                return oid
+        raise MissingOidClaimError("ID token does not contain oid.")
+
+    def extract_tid(self, claims: dict[str, object]) -> str:
+        raw_value = claims.get("tid")
+        if isinstance(raw_value, str):
+            tid = raw_value.strip()
+            if tid:
+                return tid
+        raise MissingTidClaimError("ID token does not contain tid.")

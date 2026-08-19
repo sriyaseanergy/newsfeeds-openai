@@ -1,6 +1,6 @@
-from app.api.auth.dependencies import get_current_employee
+from app.api.auth.dependencies import get_auth_service, get_current_employee
 from app.api.auth.schemas import EmployeeResponse, SessionRequest, SessionResponse
-from app.api.auth.service import get_auth_service, user_to_response
+from app.api.auth.service import AuthService, user_to_response
 from app.core.settings import get_settings
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -15,9 +15,12 @@ def get_authenticated_employee(
 
 
 @router.post("/session", response_model=SessionResponse)
-def create_session(payload: SessionRequest) -> SessionResponse:
+def create_session(
+    payload: SessionRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> SessionResponse:
     try:
-        return get_auth_service().create_session(payload.id_token)
+        return auth_service.create_session(payload.id_token)
     except HTTPException:
         raise
     except Exception as exc:
