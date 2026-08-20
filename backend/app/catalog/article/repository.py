@@ -2,7 +2,7 @@ from uuid import UUID
 
 from app.catalog.article.model import Article
 from app.catalog.article.schemas import ArticleCreate, ArticleUpdate
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 
@@ -28,7 +28,10 @@ class ArticleRepository:
         return self.db.execute(statement).scalar_one_or_none()
 
     def list(self) -> list[Article]:
-        statement = select(Article).order_by(Article.created_at.desc())
+        statement = select(Article).order_by(
+            desc(Article.published_at).nulls_last(),
+            Article.created_at.desc(),
+        )
         return list(self.db.execute(statement).scalars().all())
 
     def update(self, article: Article, payload: ArticleUpdate) -> Article:
