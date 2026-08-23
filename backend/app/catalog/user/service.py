@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.api.auth.admin_emails import is_feed_source_admin
+from app.core.admin_emails import is_feed_source_admin
 from app.catalog.user.model import User
 from app.catalog.user.repository import UserRepository
 from app.catalog.user.schemas import EntraIdentity

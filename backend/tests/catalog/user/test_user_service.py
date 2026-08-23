@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from unittest.mock import MagicMock, patch
 
 import pytest
-from app.api.auth.admin_emails import is_feed_source_admin
+from app.core.admin_emails import is_feed_source_admin
 from app.catalog.user.schemas import EntraIdentity
 from app.catalog.user.service import UserConflictError, UserService
 from app.core.settings import Settings
