@@ -29,8 +29,19 @@ def _settings(admin_emails: str = "admin@example.com") -> Settings:
     )
 
 
-def _user(email: str = "admin@example.com", name: str = "Admin User") -> AuthenticatedUser:
-    return AuthenticatedUser(email=email, name=name, designation="Employee", emp_no=None)
+def _user(
+    email: str = "admin@example.com",
+    name: str = "Admin User",
+    *,
+    is_admin: bool = False,
+) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        email=email,
+        name=name,
+        designation="Employee",
+        emp_no=None,
+        is_admin=is_admin,
+    )
 
 
 def _claims(
@@ -88,24 +99,21 @@ def test_is_feed_source_admin_is_case_insensitive() -> None:
 
 
 def test_empty_admin_configuration_grants_no_permissions() -> None:
-    settings = _settings("")
-    assert can_manage_feed_sources(_user("anyone@example.com"), settings) is False
+    assert can_manage_feed_sources(_user("anyone@example.com", is_admin=False)) is False
 
 
 @pytest.mark.parametrize(
-    ("raw", "email", "expected"),
+    ("is_admin", "expected"),
     [
-        ("admin@example.com", "admin@example.com", True),
-        ("admin@example.com", "other@example.com", False),
+        (True, True),
+        (False, False),
     ],
 )
-def test_can_manage_feed_sources_uses_email_allowlist(
-    raw: str,
-    email: str,
+def test_can_manage_feed_sources_uses_is_admin(
+    is_admin: bool,
     expected: bool,
 ) -> None:
-    settings = _settings(raw)
-    assert can_manage_feed_sources(_user(email), settings) is expected
+    assert can_manage_feed_sources(_user("user@example.com", is_admin=is_admin)) is expected
 
 
 def _build_protected_client(user: AuthenticatedUser | None) -> TestClient:
@@ -123,17 +131,15 @@ def _build_protected_client(user: AuthenticatedUser | None) -> TestClient:
 
 
 def test_require_feed_source_manager_allows_configured_admin() -> None:
-    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
-        client = _build_protected_client(_user("admin@example.com"))
-        response = client.get("/protected")
+    client = _build_protected_client(_user("admin@example.com", is_admin=True))
+    response = client.get("/protected")
     assert response.status_code == 200
     assert response.json() == {"email": "admin@example.com"}
 
 
 def test_require_feed_source_manager_returns_403_for_non_admin() -> None:
-    with patch("app.api.auth.authorization.get_settings", return_value=_settings("admin@example.com")):
-        client = _build_protected_client(_user("other@example.com"))
-        response = client.get("/protected")
+    client = _build_protected_client(_user("other@example.com", is_admin=False))
+    response = client.get("/protected")
     assert response.status_code == 403
     assert response.json() == {
         "detail": "You do not have permission to manage feed sources.",
@@ -145,6 +151,9 @@ def test_create_session_success_with_email_claim(
     mock_user_service: MagicMock,
 ) -> None:
     claims = _claims(email="jane@example.com", name="Jane Doe")
+    catalog_user = MagicMock()
+    catalog_user.is_admin = True
+    mock_user_service.record_login.return_value = catalog_user
     with patch("app.api.auth.service.get_settings", return_value=_settings("jane@example.com")):
         with patch(
             "app.api.auth.authenticator.AzureAdIdTokenValidator.validate",
@@ -157,6 +166,7 @@ def test_create_session_success_with_email_claim(
     assert body["employee"]["name"] == "Jane Doe"
     assert body["employee"]["designation"] == "Employee"
     assert body["employee"]["emp_no"] is None
+    assert body["employee"]["is_admin"] is True
     assert body["employee"]["can_manage_feed_sources"] is True
     mock_user_service.record_login.assert_called_once()
     identity = mock_user_service.record_login.call_args.args[0]
@@ -227,14 +237,15 @@ def test_create_session_missing_email_claim_returns_401(auth_client: TestClient)
 
 
 def test_auth_me_returns_can_manage_flag(auth_client: TestClient) -> None:
-    with patch("app.api.auth.router.get_settings", return_value=_settings("me@example.com")):
-        auth_client.app.dependency_overrides[get_current_employee] = lambda: _user(
-            "me@example.com",
-            name="Me User",
-        )
-        response = auth_client.get("/auth/me", headers={"Authorization": "Bearer token"})
+    auth_client.app.dependency_overrides[get_current_employee] = lambda: _user(
+        "me@example.com",
+        name="Me User",
+        is_admin=True,
+    )
+    response = auth_client.get("/auth/me", headers={"Authorization": "Bearer token"})
     auth_client.app.dependency_overrides.clear()
     assert response.status_code == 200
+    assert response.json()["is_admin"] is True
     assert response.json()["can_manage_feed_sources"] is True
 
 

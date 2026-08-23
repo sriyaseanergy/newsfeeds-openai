@@ -49,8 +49,8 @@ class FeedService:
             raise FeedNotFoundError(f"Feed with id '{feed_id}' was not found.")
         return feed
 
-    def list(self) -> list[Feed]:
-        return self.repository.list()
+    def list(self, technology_domain_id: UUID | None = None) -> list[Feed]:
+        return self.repository.list(technology_domain_id=technology_domain_id)
 
     def update(self, feed_id: UUID, payload: FeedUpdate) -> Feed:
         feed = self.get_by_id(feed_id)
