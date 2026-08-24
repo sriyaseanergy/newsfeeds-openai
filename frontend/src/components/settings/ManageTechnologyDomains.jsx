@@ -50,8 +50,7 @@ export default function ManageTechnologyDomains({
     setError('')
     setDeleting(domain.id)
     try {
-      const r = await fetch(`${API.technologyDomains}/${domain.id}`, { method: 'DELETE' })
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+      await apiFetch(`${API.technologyDomains}/${domain.id}`, { method: 'DELETE' })
       onTechnologyDomainsChange()
       onFeedsChange()
     } catch (e) {

@@ -60,16 +60,30 @@ export async function ensureMsalAccount() {
 }
 
 /** Acquire a fresh Azure AD ID token for backend Bearer auth. Returns null when unauthenticated. */
-export async function acquireAuthToken() {
+export async function acquireAuthToken(options = {}) {
+  const { interactive = false } = options;
   try {
     const account = await ensureMsalAccount();
     if (!account) return null;
     const msal = getMsalInstance();
-    const result = await msal.acquireTokenSilent({
-      ...loginRequest,
-      account,
-    });
-    return result.idToken || null;
+    try {
+      const result = await msal.acquireTokenSilent({
+        ...loginRequest,
+        account,
+      });
+      return result.idToken || null;
+    } catch (silentError) {
+      if (!interactive) throw silentError;
+      const result = await msal.acquireTokenPopup({
+        ...loginRequest,
+        account,
+        redirectUri: getMsalRedirectUri(),
+      });
+      if (result.account) {
+        msal.setActiveAccount(result.account);
+      }
+      return result.idToken || null;
+    }
   } catch {
     return null;
   }

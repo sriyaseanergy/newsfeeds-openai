@@ -20,5 +20,5 @@ export function clearStoredEmployee() {
 }
 
 export function canManageFeedSources(employee) {
-  return employee?.can_manage_feed_sources === true;
+  return employee?.is_admin === true || employee?.can_manage_feed_sources === true
 }

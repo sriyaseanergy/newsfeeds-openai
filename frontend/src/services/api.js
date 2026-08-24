@@ -1,12 +1,29 @@
 import { acquireAuthToken } from './msalInstance.js'
 
+function methodNeedsAuth(method = 'GET') {
+  const normalized = String(method).toUpperCase()
+  return !['GET', 'HEAD', 'OPTIONS'].includes(normalized)
+}
+
+async function resolveAuthToken(method) {
+  let token = await acquireAuthToken()
+  if (!token && methodNeedsAuth(method)) {
+    token = await acquireAuthToken({ interactive: true })
+  }
+  if (!token && methodNeedsAuth(method)) {
+    throw new Error('401 Missing or invalid authentication. Please sign in again.')
+  }
+  return token
+}
+
 export async function apiFetch(url, opts = {}) {
-  const token = await acquireAuthToken()
+  const method = opts.method || 'GET'
+  const token = await resolveAuthToken(method)
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) }
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
-  const r = await fetch(url, { headers, ...opts })
+  const r = await fetch(url, { ...opts, headers })
   if (!r.ok) {
     let detail = ''
     try {

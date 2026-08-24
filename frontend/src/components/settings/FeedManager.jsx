@@ -41,7 +41,7 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
     if (!confirm(`Delete "${feed.name}"? This cannot be undone.`)) return
     setDeleting(feed.id)
     try {
-      await fetch(`${API.feeds}/${feed.id}`, { method: 'DELETE' })
+      await apiFetch(`${API.feeds}/${feed.id}`, { method: 'DELETE' })
       onFeedsChange()
     } catch (e) {
       console.error(e)
