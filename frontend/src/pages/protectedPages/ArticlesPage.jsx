@@ -1,14 +1,12 @@
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import Paper from '@mui/material/Paper'
 import { useAppData } from '../../context/AppDataContext.jsx'
-import { technologyDomainNames } from '../../utils/articles.js'
-import { DEFAULT_TECHNOLOGY_DOMAINS } from '../../constants/categories.js'
 import Topbar from '../../components/articles/Topbar.jsx'
 import ArticleList from '../../components/articles/ArticleList.jsx'
 
 export default function ArticlesPage() {
-  const [searchParams] = useSearchParams()
+  const { selectedCat } = useOutletContext()
   const {
     articles,
     feeds,
@@ -18,19 +16,6 @@ export default function ArticlesPage() {
   } = useAppData()
 
   const [typeFilter, setTypeFilter] = useState('All')
-  const categories = technologyDomainNames(technologyDomains)
-  const catFromUrl = searchParams.get('cat')
-  const [selectedCat, setSelectedCat] = useState(
-    catFromUrl && categories.includes(catFromUrl) ? catFromUrl : categories[0] || DEFAULT_TECHNOLOGY_DOMAINS[0]
-  )
-
-  useEffect(() => {
-    if (catFromUrl && categories.includes(catFromUrl)) {
-      setSelectedCat(catFromUrl)
-    } else if (!categories.includes(selectedCat)) {
-      setSelectedCat(categories[0] || DEFAULT_TECHNOLOGY_DOMAINS[0])
-    }
-  }, [catFromUrl, categories, selectedCat])
 
   return (
     <Paper

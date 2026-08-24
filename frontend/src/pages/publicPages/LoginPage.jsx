@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
-import Alert from "@mui/material/Alert";
 import SeaSignalLogo from "../../components/SeaSignalLogo.jsx";
+import { useNotification } from "../../components/notificationController.tsx";
 import seasignalBg from "../../assets/images/seasignal-bg.png";
 import { API } from "../../config/api.js";
 import { persistEmployee } from "../../services/auth.js";
@@ -48,8 +48,9 @@ function isUserCancellationError(error) {
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setSessionEmployee } = useAuth();
+  const { showNotification } = useNotification();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const configWarningShown = useRef(false);
 
   const configured = useMemo(() => {
     const tid = String(import.meta.env.VITE_AZURE_TENANT_ID || "").trim();
@@ -57,8 +58,20 @@ export default function LoginPage() {
     return !!(tid && cid);
   }, []);
 
+  useEffect(() => {
+    if (!configured && !configWarningShown.current) {
+      configWarningShown.current = true;
+      showNotification({
+        severity: "warning",
+        status: "Warning",
+        description:
+          "Azure AD is not configured. Add VITE_AZURE_TENANT_ID and VITE_AZURE_CLIENT_ID to frontend/.env and restart Vite.",
+        autoHideMs: 0,
+      });
+    }
+  }, [configured, showNotification]);
+
   const signIn = useCallback(async () => {
-    setError("");
     setBusy(true);
     try {
       const msal = getMsalInstance();
@@ -74,9 +87,11 @@ export default function LoginPage() {
       }
       const idToken = res.idToken;
       if (!idToken) {
-        setError(
-          "Sign-in did not return an ID token. Check the app registration (SPA) and scopes.",
-        );
+        showNotification({
+          severity: "error",
+          description:
+            "Sign-in did not return an ID token. Check the app registration (SPA) and scopes.",
+        });
         return;
       }
       const r = await fetch(API.authSession, {
@@ -90,7 +105,10 @@ export default function LoginPage() {
         data = raw ? JSON.parse(raw) : {};
       } catch {
         if (!r.ok) {
-          setError(raw || `${r.status} ${r.statusText}`);
+          showNotification({
+            severity: "error",
+            message: raw || `${r.status} ${r.statusText}`,
+          });
           return;
         }
       }
@@ -98,12 +116,19 @@ export default function LoginPage() {
         const msg =
           typeof data.detail === "string"
             ? data.detail
-            : data.detail?.[0]?.msg || raw || `${r.status} ${r.statusText}`;
-        setError(msg || "Sign-in failed");
+            : data.detail?.[0]?.msg || raw || r.statusText;
+        showNotification({
+          severity: "error",
+          status: String(r.status),
+          description: msg || "Sign-in failed",
+        });
         return;
       }
       if (!data.employee) {
-        setError("Unexpected response from server");
+        showNotification({
+          severity: "error",
+          description: "Unexpected response from server",
+        });
         return;
       }
       persistEmployee(data.employee);
@@ -111,12 +136,15 @@ export default function LoginPage() {
       navigate("/articles", { replace: true });
     } catch (e) {
       if (!isUserCancellationError(e)) {
-        setError(e?.message || String(e));
+        showNotification({
+          severity: "error",
+          message: e?.message || String(e),
+        });
       }
     } finally {
       setBusy(false);
     }
-  }, [navigate, setSessionEmployee]);
+  }, [navigate, setSessionEmployee, showNotification]);
 
   return (
     <Box
@@ -192,23 +220,16 @@ export default function LoginPage() {
           <Typography
             variant="body1"
             textAlign="center"
-            sx={{ mb: 3.5, color: "rgba(200, 220, 240, 0.85)", fontWeight: 500, fontSize: 18, lineHeight: 1.5 }}
+            sx={{
+              mb: 3.5,
+              color: "rgba(200, 220, 240, 0.85)",
+              fontWeight: 500,
+              fontSize: 18,
+              lineHeight: 1.5,
+            }}
           >
             Use your Microsoft Account to Sign In.
           </Typography>
-
-          {!configured && (
-            <Alert severity="warning" sx={{ width: "100%", mb: 2 }}>
-              Azure AD is not configured. Add VITE_AZURE_TENANT_ID and
-              VITE_AZURE_CLIENT_ID to frontend/.env and restart Vite.
-            </Alert>
-          )}
-
-          {error && (
-            <Alert severity="error" sx={{ width: "100%", mb: 2 }}>
-              {error}
-            </Alert>
-          )}
 
           <Button
             fullWidth

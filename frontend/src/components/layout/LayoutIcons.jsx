@@ -12,9 +12,9 @@ import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 
 const iconStyle = { width: 20, height: 20, display: 'block' }
-const menuIconProps = { fontSize: 'medium', sx: { display: 'block' } }
+const menuIconProps = { sx: { display: 'block', fontSize: 18, width: 18, height: 18 } }
 
-const profileIconProps = { sx: { display: 'block', fontSize: 20 } }
+const profileIconProps = { sx: { display: 'block', fontSize: 18, width: 18, height: 18 } }
 
 export function IconNotes({ size = 30, color }) {
   return (
@@ -37,9 +37,13 @@ export function IconMenu({ size = 20 }) {
   )
 }
 
-export function IconChevronRight({ size = 20 }) {
+export function IconChevronRight({ size = 20, color }) {
   return (
-    <svg style={{ width: size, height: size, display: 'block' }} viewBox="0 0 24 24" fill="currentColor">
+    <svg
+      style={{ width: size, height: size, display: 'block', color: color || 'currentColor' }}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
       <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
     </svg>
   )
@@ -103,14 +107,15 @@ export function IconDashboard() {
   )
 }
 
-export function IconHome() {
+export function IconHome({ size = 16 }) {
   return (
     <HomeOutlinedIcon
       sx={{
         display: 'block',
-        fontSize: 13,
-        width: 13,
-        height: 13,
+        fontSize: size,
+        width: size,
+        height: size,
+        flexShrink: 0,
       }}
     />
   )
