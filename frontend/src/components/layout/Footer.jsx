@@ -1,6 +1,6 @@
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import { LAYOUT } from '../../config/theme.js'
+import { FONT_FAMILY, LAYOUT } from '../../config/theme.js'
 
 export default function Footer() {
   return (
@@ -16,8 +16,15 @@ export default function Footer() {
         flexShrink: 0,
       }}
     >
-      <Typography variant="caption" color="text.secondary">
-        © seanergy.ai group. All rights reserved
+      <Typography
+        sx={{
+          fontFamily: FONT_FAMILY,
+          fontSize: 14,
+          fontWeight: 500,
+          color: 'text.secondary',
+        }}
+      >
+        © Seanergy.ai group. All rights reserved
       </Typography>
     </Box>
   )

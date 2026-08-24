@@ -1,14 +1,28 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { API } from '../config/api.js'
 import { apiFetch } from '../services/api.js'
 import { DEFAULT_TECHNOLOGY_DOMAINS } from '../constants/categories.js'
 
 const AppDataContext = createContext(null)
 
+let initialLoadPromise = null
+let initialLoadResetTimer = null
+
 export function useAppData() {
   const ctx = useContext(AppDataContext)
   if (!ctx) throw new Error('useAppData must be used within AppDataProvider')
   return ctx
+}
+
+function fetchInitialData() {
+  if (!initialLoadPromise) {
+    initialLoadPromise = Promise.all([
+      apiFetch(API.emails).catch(() => []),
+      apiFetch(API.articles).catch(() => []),
+      apiFetch(API.technologyDomains).catch(() => null),
+    ])
+  }
+  return initialLoadPromise
 }
 
 export function AppDataProvider({ children }) {
@@ -21,20 +35,25 @@ export function AppDataProvider({ children }) {
   const [feedHealth, setFeedHealth] = useState([])
   const [artLoading, setArtLoading] = useState(false)
   const [healthLoading, setHealthLoading] = useState(false)
-  const [apiError, setApiError] = useState(null)
-  const [fetched, setFetched] = useState(false)
+
+  const articlesRef = useRef(articles)
+  const feedsRef = useRef(feeds)
+
+  articlesRef.current = articles
+  feedsRef.current = feeds
 
   const fetchStatus = useCallback(async () => {
+    const currentArticles = articlesRef.current
+    const currentFeeds = feedsRef.current
     setStatusData({
-      articles: { total: articles.length, pending_security_notification: 0 },
+      articles: { total: currentArticles.length, pending_security_notification: 0 },
       feeds: {
-        healthy: feeds.filter(f => f.is_enabled).length,
-        total: feeds.length,
-        disabled: feeds.filter(f => !f.is_enabled).length,
+        healthy: currentFeeds.filter(f => f.is_enabled).length,
+        total: currentFeeds.length,
+        disabled: currentFeeds.filter(f => !f.is_enabled).length,
       },
     })
-    setFetched(true)
-  }, [articles.length, feeds])
+  }, [])
 
   const fetchRecipients = useCallback(async () => {
     setRecipientsLoading(true)
@@ -92,14 +111,56 @@ export function AppDataProvider({ children }) {
   }, [])
 
   useEffect(() => {
+    if (initialLoadResetTimer) {
+      clearTimeout(initialLoadResetTimer)
+      initialLoadResetTimer = null
+    }
+
+    let cancelled = false
+    setRecipientsLoading(true)
+    setArtLoading(true)
+
+    fetchInitialData()
+      .then(([emails, arts, domains]) => {
+        if (cancelled) return
+
+        setRecipients(Array.isArray(emails) ? emails : [])
+        setArticles(Array.isArray(arts) ? arts : [])
+        if (Array.isArray(domains)) {
+          setTechnologyDomains(domains)
+        } else {
+          setTechnologyDomains(
+            DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))
+          )
+        }
+      })
+      .catch(e => {
+        if (!cancelled) console.error(e)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRecipientsLoading(false)
+          setArtLoading(false)
+        }
+      })
+
+    const intervalId = setInterval(() => {
+      if (!cancelled) fetchStatus()
+    }, 30_000)
+
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+      initialLoadResetTimer = setTimeout(() => {
+        initialLoadPromise = null
+        initialLoadResetTimer = null
+      }, 200)
+    }
+  }, [fetchStatus])
+
+  useEffect(() => {
     fetchStatus()
-    fetchRecipients()
-    fetchArticles()
-    fetchFeedHealth()
-    fetchTechnologyDomains()
-    const t = setInterval(fetchStatus, 30_000)
-    return () => clearInterval(t)
-  }, [fetchStatus, fetchRecipients, fetchArticles, fetchFeedHealth, fetchTechnologyDomains])
+  }, [articles.length, feeds, fetchStatus])
 
   const value = {
     statusData,
@@ -111,8 +172,6 @@ export function AppDataProvider({ children }) {
     feedHealth,
     artLoading,
     healthLoading,
-    apiError,
-    fetched,
     setRecipients,
     fetchStatus,
     fetchRecipients,

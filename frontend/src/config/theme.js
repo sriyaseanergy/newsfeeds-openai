@@ -1,15 +1,16 @@
 import { createTheme } from "@mui/material/styles";
 
 export const BRAND = {
-  main: "#318524",
-  light: "#4a9e3a",
-  dark: "#1e5a16",
-  menuHover: "#E8F5E9",
-  hoverBorder: "#318524",
-  tableHeader: "#318524",
-  editIcon: "#318524",
-  editHover: "rgba(49, 133, 36, 0.06)",
-  rowHover: "#edf7eb",
+  main: "#29c5f4",
+  light: "#5dd4f7",
+  dark: "#1a9fd4",
+  menuHover: "rgba(41, 197, 244, 0.12)",
+  hoverBorder: "#29c5f4",
+  tableHeader: "#29c5f4",
+  editIcon: "#29c5f4",
+  editHover: "rgba(41, 197, 244, 0.06)",
+  rowHover: "rgba(41, 197, 244, 0.08)",
+  sidebarCollapsedBg: "#29c5f4",
 };
 
 export const LAYOUT = {

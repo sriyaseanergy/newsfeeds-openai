@@ -6,8 +6,9 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
+import Tooltip from '@mui/material/Tooltip'
 import { useTheme } from '@mui/material/styles'
-import { LAYOUT, BRAND } from '../../config/theme.js'
+import { LAYOUT, BRAND, FONT_FAMILY } from '../../config/theme.js'
 import { catCount, technologyDomainNames } from '../../utils/articles.js'
 import {
   IconFeedHealth, IconSettings, IconPsychology, IconLightbulb, IconArticle,
@@ -21,27 +22,81 @@ function technologyDomainIcon(cat) {
   return icons[cat] || IconArticle
 }
 
+function sidebarItemBaseSx(theme, collapsed) {
+  const isDark = theme.palette.mode === 'dark'
+  return {
+    borderRadius: 1.5,
+    mx: 1,
+    mb: 0.5,
+    minHeight: 40,
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    px: collapsed ? 1 : 2,
+    ...(isDark && {
+      color: '#ffffff',
+      '& .MuiListItemIcon-root': { color: '#ffffff' },
+      '& .MuiListItemText-primary': { color: '#ffffff' },
+    }),
+  }
+}
+
+function activeItemSx() {
+  return {
+    bgcolor: BRAND.main,
+    color: '#ffffff',
+    boxShadow: 'none',
+    '& .MuiListItemIcon-root': { color: '#ffffff' },
+    '& .MuiListItemText-primary': { color: '#ffffff' },
+    '&:hover': {
+      bgcolor: BRAND.main,
+      color: '#ffffff',
+      boxShadow: 'none',
+      '& .MuiListItemIcon-root': { color: '#ffffff' },
+      '& .MuiListItemText-primary': { color: '#ffffff' },
+    },
+    '&.Mui-selected:hover': {
+      bgcolor: BRAND.main,
+      color: '#ffffff',
+      boxShadow: 'none',
+      '& .MuiListItemIcon-root': { color: '#ffffff' },
+      '& .MuiListItemText-primary': { color: '#ffffff' },
+    },
+    '&.Mui-focusVisible': {
+      bgcolor: BRAND.main,
+      outline: 'none',
+      boxShadow: 'none',
+    },
+  }
+}
+
+const collapsedTooltipProps = {
+  placement: 'right',
+  arrow: true,
+  slotProps: {
+    tooltip: {
+      sx: {
+        fontFamily: FONT_FAMILY,
+        fontSize: 16,
+        fontWeight: 500,
+        py: 0.75,
+        px: 1.5,
+      },
+    },
+  },
+}
+
 function SidebarNavItem({ to, Icon, label, badge, collapsed, end = false, onClick }) {
   const theme = useTheme()
 
-  return (
+  const button = (
     <ListItemButton
       component={NavLink}
       to={to}
       end={end}
       onClick={onClick}
+      disableRipple
       sx={{
-        borderRadius: 1.5,
-        mx: 1,
-        mb: 0.5,
-        minHeight: 40,
-        justifyContent: collapsed ? 'center' : 'flex-start',
-        px: collapsed ? 1 : 2,
-        '&.active': {
-          bgcolor: alpha => theme.palette.mode === 'dark' ? 'rgba(49,133,36,0.15)' : BRAND.menuHover,
-          color: BRAND.main,
-          '& .MuiListItemIcon-root': { color: BRAND.main },
-        },
+        ...sidebarItemBaseSx(theme, collapsed),
+        '&.active': activeItemSx(),
       }}
     >
       <ListItemIcon sx={{ minWidth: collapsed ? 0 : 36, justifyContent: 'center' }}>
@@ -56,6 +111,18 @@ function SidebarNavItem({ to, Icon, label, badge, collapsed, end = false, onClic
       {!collapsed && <ListItemText primary={label} primaryTypographyProps={{ fontSize: 13 }} />}
     </ListItemButton>
   )
+
+  if (collapsed) {
+    return (
+      <Tooltip title={label} {...collapsedTooltipProps}>
+        <Box component="span" sx={{ display: 'block' }}>
+          {button}
+        </Box>
+      </Tooltip>
+    )
+  }
+
+  return button
 }
 
 export default function Sidebar({
@@ -106,23 +173,15 @@ export default function Sidebar({
             const count = catCount(articles, cat, feeds, technologyDomains)
             const Icon = technologyDomainIcon(cat)
             const isActive = location.pathname.startsWith('/articles') && selectedCat === cat
-            return (
+
+            const item = (
               <ListItemButton
-                key={cat}
                 selected={isActive}
                 onClick={() => handleCatClick(cat)}
+                disableRipple
                 sx={{
-                  borderRadius: 1.5,
-                  mx: 1,
-                  mb: 0.5,
-                  minHeight: 40,
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  px: collapsed ? 1 : 2,
-                  '&.Mui-selected': {
-                    bgcolor: theme.palette.mode === 'dark' ? 'rgba(49,133,36,0.15)' : BRAND.menuHover,
-                    color: BRAND.main,
-                    '& .MuiListItemIcon-root': { color: BRAND.main },
-                  },
+                  ...sidebarItemBaseSx(theme, collapsed),
+                  '&.Mui-selected': activeItemSx(),
                 }}
               >
                 <ListItemIcon sx={{ minWidth: collapsed ? 0 : 36, justifyContent: 'center' }}>
@@ -138,6 +197,18 @@ export default function Sidebar({
                   <ListItemText primary={cat} primaryTypographyProps={{ fontSize: 13 }} />
                 )}
               </ListItemButton>
+            )
+
+            return collapsed ? (
+              <Tooltip key={cat} title={cat} {...collapsedTooltipProps}>
+                <Box component="span" sx={{ display: 'block' }}>
+                  {item}
+                </Box>
+              </Tooltip>
+            ) : (
+              <Box key={cat} component="span" sx={{ display: 'block' }}>
+                {item}
+              </Box>
             )
           })}
         </List>

@@ -11,6 +11,3 @@ export const TECHNOLOGY_DOMAIN_COLORS = {
   AI: '#a78bfa',
   'Expert Context': '#fb923c',
 }
-
-export const RIGHT_PANEL_INITIAL_MS = 5_000
-export const RIGHT_PANEL_MAX_MS = 5 * 60_000
