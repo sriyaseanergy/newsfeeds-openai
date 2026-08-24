@@ -51,3 +51,11 @@ class UserRepository:
 
     def rollback(self) -> None:
         self.db.rollback()
+
+    def list_active_with_email(self) -> list[User]:
+        statement = (
+            select(User)
+            .where(User.is_active.is_(True), User.email.is_not(None))
+            .order_by(User.created_at.asc())
+        )
+        return list(self.db.execute(statement).scalars().all())

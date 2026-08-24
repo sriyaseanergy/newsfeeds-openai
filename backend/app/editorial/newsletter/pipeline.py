@@ -11,13 +11,15 @@ from datetime import datetime
 from time import perf_counter
 from uuid import UUID, uuid4
 
-from sqlalchemy import text
-
 from app.catalog.article.model import Article
 from app.catalog.article.repository import ArticleRepository
 from app.catalog.feed.model import Feed
 from app.catalog.feed.repository import FeedRepository
 from app.catalog.technology_domain.model import TechnologyDomainSchedule
+from app.catalog.technology_domain.repository import TechnologyDomainRepository
+from app.catalog.user.repository import UserRepository
+from app.catalog.user_category_preference.repository import UserCategoryPreferenceRepository
+from app.catalog.user_category_preference.service import UserCategoryPreferenceService
 from app.core.settings import Settings, get_settings
 from app.editorial.candidate_filter.candidates import (
     build_candidate_article,
@@ -75,6 +77,11 @@ class DigestRunStats:
     articles_in_newsletter: int = 0
     enrichment_failures: int = 0
     classification_failures: int = 0
+    users_eligible: int = 0
+    users_sent: int = 0
+    users_skipped_no_domains: int = 0
+    users_skipped_no_content: int = 0
+    users_send_failures: int = 0
     recipients: list[str] = field(default_factory=list)
     email_sent: bool = False
     email_subject: str = ""
@@ -134,45 +141,13 @@ def run_scheduled_digest(
         )
         stats.articles_in_newsletter = len(newsletter_articles)
 
-        if not newsletter_articles:
-            stats.skip_reason = "no_articles_selected_for_enrichment"
-            _log_run_summary(stats, started)
-            logger.warning(
-                "digest.run.skip_send run_id=%s reason=%s "
-                "(feeds_processed=%s acquired=%s classified=%s selected=%s)",
-                run_id,
-                stats.skip_reason,
-                stats.feeds_processed,
-                stats.articles_acquired,
-                stats.articles_classified,
-                stats.articles_selected,
-            )
-            return stats
-
-        html_body, subject = _render_newsletter(newsletter_articles)
-        stats.email_subject = subject
-        recipients = _load_enabled_recipients()
-        stats.recipients = recipients
-
-        if not recipients:
-            stats.skip_reason = "no_enabled_recipients"
-            _log_run_summary(stats, started)
-            logger.error(
-                "digest.run.skip_send run_id=%s reason=%s subject=%r",
-                run_id,
-                stats.skip_reason,
-                subject,
-            )
-            return stats
-
-        _send_digest_email(
+        _send_personalized_digests(
             run_id=run_id,
-            subject=subject,
-            html_body=html_body,
-            recipients=recipients,
+            newsletter_articles=newsletter_articles,
+            domain_schedule=domain_schedule,
+            stats=stats,
             settings=resolved_settings,
         )
-        stats.email_sent = True
         _log_run_summary(stats, started)
         return stats
 
@@ -410,6 +385,7 @@ def _build_newsletter_articles(
                     url=item.article_data.url,
                     source_name=item.feed.name or "",
                     published_at=item.article_data.published_at,
+                    technology_domain_id=item.feed.technology_domain_id,
                     technology_domain=_feed_domain_name(item.feed),
                     classification=classification,
                     enrichment=enrichment,
@@ -465,6 +441,129 @@ def _enrich_selected_article(
         return None
 
 
+def _send_personalized_digests(
+    *,
+    run_id: str,
+    newsletter_articles: list[NewsletterArticle],
+    domain_schedule: TechnologyDomainSchedule,
+    stats: DigestRunStats,
+    settings: Settings,
+) -> None:
+    with SessionLocal() as db:
+        users = UserRepository(db).list_active_with_email()
+
+    stats.users_eligible = len(users)
+    logger.info(
+        "digest.users.eligible run_id=%s count=%s pool_articles=%s",
+        run_id,
+        len(users),
+        len(newsletter_articles),
+    )
+
+    if not users:
+        stats.skip_reason = "no_eligible_users"
+        logger.warning("digest.run.skip_send run_id=%s reason=%s", run_id, stats.skip_reason)
+        return
+
+    if not newsletter_articles:
+        stats.skip_reason = "no_articles_selected_for_enrichment"
+        logger.warning(
+            "digest.run.skip_send run_id=%s reason=%s "
+            "(feeds_processed=%s acquired=%s classified=%s selected=%s)",
+            run_id,
+            stats.skip_reason,
+            stats.feeds_processed,
+            stats.articles_acquired,
+            stats.articles_classified,
+            stats.articles_selected,
+        )
+        return
+
+    for user in users:
+        email = (user.email or "").strip()
+        if not email:
+            logger.warning(
+                "digest.user.skip run_id=%s user_id=%s reason=missing_email",
+                run_id,
+                user.id,
+            )
+            continue
+
+        with SessionLocal() as db:
+            preference_service = UserCategoryPreferenceService(
+                UserCategoryPreferenceRepository(db),
+                TechnologyDomainRepository(db),
+                FeedRepository(db),
+            )
+            enabled_domain_ids = preference_service.list_effective_enabled_for_schedule(
+                user.id,
+                domain_schedule,
+            )
+
+        if not enabled_domain_ids:
+            stats.users_skipped_no_domains += 1
+            logger.info(
+                "digest.user.skip run_id=%s user_id=%s email=%s reason=no_enabled_domains",
+                run_id,
+                user.id,
+                email,
+            )
+            continue
+
+        user_articles = [
+            article
+            for article in newsletter_articles
+            if article.technology_domain_id in enabled_domain_ids
+        ]
+        if not user_articles:
+            stats.users_skipped_no_content += 1
+            logger.info(
+                "digest.user.skip run_id=%s user_id=%s email=%s reason=no_matching_articles",
+                run_id,
+                user.id,
+                email,
+            )
+            continue
+
+        html_body, subject = _render_newsletter(user_articles)
+        if not stats.email_subject:
+            stats.email_subject = subject
+
+        try:
+            _send_digest_email(
+                run_id=run_id,
+                subject=subject,
+                html_body=html_body,
+                recipients=[email],
+                settings=settings,
+            )
+        except EmailSendError:
+            stats.users_send_failures += 1
+            logger.exception(
+                "digest.user.send_failed run_id=%s user_id=%s email=%s subject=%r",
+                run_id,
+                user.id,
+                email,
+                subject,
+            )
+            continue
+
+        stats.users_sent += 1
+        stats.recipients.append(email)
+        logger.info(
+            "digest.user.send_ok run_id=%s user_id=%s email=%s articles=%s subject=%r",
+            run_id,
+            user.id,
+            email,
+            len(user_articles),
+            subject,
+        )
+
+    stats.email_sent = stats.users_sent > 0
+    if not stats.email_sent and stats.skip_reason is None:
+        stats.skip_reason = "no_recipients_or_content"
+
+
 def _render_newsletter(articles: list[NewsletterArticle]) -> tuple[str, str]:
     renderer = NewsletterRenderer()
     render_input = NewsletterRenderInput(
@@ -518,17 +617,6 @@ def _send_digest_email(
         subject,
         len(recipients),
     )
-
-
-def _load_enabled_recipients() -> list[str]:
-    with SessionLocal() as db:
-        rows = db.execute(
-            text(
-                "SELECT email FROM email_recipients "
-                "WHERE is_enabled = true ORDER BY created_at ASC"
-            )
-        ).fetchall()
-    return [str(row[0]).strip() for row in rows if str(row[0]).strip()]
 
 
 def _select_scheduled_feeds(
@@ -587,7 +675,9 @@ def _log_run_summary(stats: DigestRunStats, started: float) -> None:
         "feeds_eligible=%s feeds_processed=%s feeds_failed=%s "
         "acquired=%s dedup_skipped=%s classify_candidates=%s classified=%s "
         "selected=%s enriched=%s in_newsletter=%s enrichment_failures=%s "
-        "classification_failures=%s recipients=%s subject=%r duration_s=%.2f",
+        "classification_failures=%s users_eligible=%s users_sent=%s "
+        "users_skipped_no_domains=%s users_skipped_no_content=%s "
+        "users_send_failures=%s recipients=%s subject=%r duration_s=%.2f",
         stats.run_id,
         stats.schedule_name,
         stats.email_sent,
@@ -604,6 +694,11 @@ def _log_run_summary(stats: DigestRunStats, started: float) -> None:
         stats.articles_in_newsletter,
         stats.enrichment_failures,
         stats.classification_failures,
+        stats.users_eligible,
+        stats.users_sent,
+        stats.users_skipped_no_domains,
+        stats.users_skipped_no_content,
+        stats.users_send_failures,
         len(stats.recipients),
         stats.email_subject or "(none)",
         perf_counter() - started,

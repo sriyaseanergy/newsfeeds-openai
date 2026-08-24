@@ -18,6 +18,7 @@ import argparse
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from uuid import UUID
 
 from app.catalog.article.model import Article
 from app.catalog.article.repository import ArticleRepository
@@ -68,6 +69,8 @@ from app.ingestion.acquisition_factory import AcquisitionFactory
 from app.ingestion.models import NormalizedArticleData
 
 logger = get_logger(__name__)
+
+_DEMO_DOMAIN_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 def parse_args() -> argparse.Namespace:
@@ -171,6 +174,7 @@ def _demo_articles_for_missing_sections(
                 source_name="CISA Alerts",
                 published_at=published,
                 article_type=ArticleType.NEWS,
+                technology_domain_id=_DEMO_DOMAIN_ID,
                 technology_domain="SECURITY",
                 severity=Severity.CRITICAL,
                 actionability=Actionability.IMMEDIATE_ACTION,
@@ -191,6 +195,7 @@ def _demo_articles_for_missing_sections(
                 source_name="TechCrunch",
                 published_at=published,
                 article_type=ArticleType.RELEASE,
+                technology_domain_id=_DEMO_DOMAIN_ID,
                 technology_domain="AI",
                 severity=Severity.NONE,
                 actionability=Actionability.INFORMATIONAL,
@@ -210,6 +215,7 @@ def _demo_articles_for_missing_sections(
                 source_name="ArXiv",
                 published_at=published,
                 article_type=ArticleType.RESEARCH,
+                technology_domain_id=_DEMO_DOMAIN_ID,
                 technology_domain="AI",
                 severity=Severity.NONE,
                 actionability=Actionability.INFORMATIONAL,
@@ -229,6 +235,7 @@ def _demo_articles_for_missing_sections(
                 source_name="Simon Willison",
                 published_at=published,
                 article_type=ArticleType.BLOG,
+                technology_domain_id=_DEMO_DOMAIN_ID,
                 technology_domain="AI",
                 severity=Severity.NONE,
                 actionability=Actionability.MONITOR,
@@ -424,6 +431,7 @@ def main() -> None:
                     url=pending.article_data.url,
                     source_name=pending.feed.name,
                     published_at=pending.article_data.published_at,
+                    technology_domain_id=pending.feed.technology_domain_id,
                     technology_domain=domain_name,
                     classification=classification,
                     enrichment=enrichment,
