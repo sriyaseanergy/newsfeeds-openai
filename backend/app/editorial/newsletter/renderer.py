@@ -167,9 +167,17 @@ class NewsletterRenderer:
                 f"{_escape(_URGENCY_BADGE_LABEL)}</span>"
             )
 
-        return f"""
-            <tr>
-              <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding:0 0 24px 0;border-bottom:1px solid #e8e8e8;vertical-align:top;">
+        image_url = (article.image_url or "").strip()
+        image_cell = ""
+        if image_url:
+            image_cell = (
+                '<td width="88" valign="top" style="vertical-align:top;padding-right:12px;">'
+                f'<img src="{_escape(image_url)}" alt="" width="76" height="76" '
+                'style="display:block;width:76px;height:76px;object-fit:cover;border-radius:4px;border:0;" />'
+                "</td>"
+            )
+
+        body_html = f"""
                 <div style="font-size:16px;color:#000000;font-weight:700;line-height:1.35;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;margin-bottom:6px;">
                   {_escape(article.title)}{urgency_badge}
                 </div>
@@ -179,7 +187,25 @@ class NewsletterRenderer:
                 {enrichment_html}
                 <div style="margin-top:12px;">
                   <a href="{_escape(read_url)}" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#000000;text-decoration:none;font-weight:600;font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Read more &#8594;</a>
-                </div>
+                </div>"""
+
+        if image_cell:
+            content_html = f"""
+                <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="background-color:#ffffff;">
+                  <tr>
+                    {image_cell}
+                    <td valign="top" style="vertical-align:top;">
+                      {body_html}
+                    </td>
+                  </tr>
+                </table>"""
+        else:
+            content_html = body_html
+
+        return f"""
+            <tr>
+              <td bgcolor="#ffffff" class="td-override" style="background-color:#ffffff;padding:0 0 24px 0;border-bottom:1px solid #e8e8e8;vertical-align:top;">
+                {content_html}
               </td>
             </tr>"""
 
@@ -482,7 +508,7 @@ def _replace_between(
 
 def _replace_greeting_paragraph(template: str, greeting_body: str) -> str:
     pattern = re.compile(
-        r'(<p style="margin:10px 0 0 0;[^"]*">)(.*?)(</p>)',
+        r'(<p style="margin:0;font-size:14px;color:#555555;line-height:1\.7;[^"]*">)(.*?)(</p>)',
         re.DOTALL,
     )
     return pattern.sub(
@@ -495,7 +521,9 @@ def _replace_greeting_paragraph(template: str, greeting_body: str) -> str:
 def _insert_after_greeting(template: str, signal_block: str) -> str:
     marker = '</p>\n            </td>\n          </tr>\n\n          <!-- Sections -->'
     if marker not in template:
-        msg = "Could not locate greeting block for signal insertion."
+        msg = "Could not locate briefing intro block for signal insertion."
         raise RuntimeError(msg)
+    if not signal_block.strip():
+        return template
     insertion = f"</p>\n              {signal_block}\n            </td>\n          </tr>\n\n          <!-- Sections -->"
     return template.replace(marker, insertion, 1)
