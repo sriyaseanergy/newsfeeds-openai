@@ -5,9 +5,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
+from unittest.mock import MagicMock, patch
+
 import pytest
+from app.core.admin_emails import is_feed_source_admin
 from app.catalog.user.schemas import EntraIdentity
 from app.catalog.user.service import UserConflictError, UserService
+from app.core.settings import Settings
 from sqlalchemy.exc import IntegrityError
 
 TENANT_ID = "647119b9-2120-453d-ab27-e02884c15a1b"
@@ -36,6 +40,7 @@ def _existing_user(**overrides: object) -> SimpleNamespace:
         display_name="Old Name",
         last_login_at=now,
         is_active=True,
+        is_admin=False,
         created_at=now,
         updated_at=now,
     )
@@ -134,3 +139,52 @@ def test_record_login_raises_when_integrity_conflict_unresolved() -> None:
         UserService(repository).record_login(_identity())
 
     repository.rollback.assert_called_once()
+
+
+def test_record_login_bootstraps_admin_from_env_on_create() -> None:
+    repository = MagicMock()
+    repository.get_by_tenant_and_entra_object_id.return_value = None
+    created = _existing_user(is_admin=True)
+    repository.create.return_value = created
+    settings = Settings(
+        azure_tenant_id=TENANT_ID,
+        azure_auth_client_id="6442ff78-2021-4ee3-8dd3-b0b04cae8066",
+        feed_source_admin_emails="user@example.com",
+    )
+
+    UserService(repository, settings=settings).record_login(_identity())
+
+    assert repository.create.call_args.kwargs["is_admin"] is True
+
+
+def test_record_login_promotes_existing_user_to_admin_without_demotion() -> None:
+    repository = MagicMock()
+    existing = _existing_user(is_admin=False)
+    repository.get_by_tenant_and_entra_object_id.return_value = existing
+    repository.save.side_effect = lambda user: user
+    settings = Settings(
+        azure_tenant_id=TENANT_ID,
+        azure_auth_client_id="6442ff78-2021-4ee3-8dd3-b0b04cae8066",
+        feed_source_admin_emails="user@example.com",
+    )
+
+    result = UserService(repository, settings=settings).record_login(_identity())
+
+    assert result.is_admin is True
+    repository.save.assert_called_once_with(existing)
+
+
+def test_record_login_never_demotes_admin_when_removed_from_env() -> None:
+    repository = MagicMock()
+    existing = _existing_user(is_admin=True)
+    repository.get_by_tenant_and_entra_object_id.return_value = existing
+    repository.save.side_effect = lambda user: user
+    settings = Settings(
+        azure_tenant_id=TENANT_ID,
+        azure_auth_client_id="6442ff78-2021-4ee3-8dd3-b0b04cae8066",
+        feed_source_admin_emails="",
+    )
+
+    result = UserService(repository, settings=settings).record_login(_identity())
+
+    assert result.is_admin is True

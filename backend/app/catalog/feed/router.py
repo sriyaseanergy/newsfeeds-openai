@@ -38,8 +38,11 @@ def create_feed(
 
 
 @router.get("", response_model=list[FeedResponse])
-def list_feeds(service: FeedService = Depends(get_feed_service)) -> list[FeedResponse]:
-    return service.list()
+def list_feeds(
+    technology_domain_id: UUID | None = None,
+    service: FeedService = Depends(get_feed_service),
+) -> list[FeedResponse]:
+    return service.list(technology_domain_id=technology_domain_id)
 
 
 @router.get("/{feed_id}", response_model=FeedResponse)

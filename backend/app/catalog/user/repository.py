@@ -28,6 +28,7 @@ class UserRepository:
         email: str | None,
         display_name: str | None,
         last_login_at: datetime,
+        is_admin: bool = False,
     ) -> User:
         user = User(
             tenant_id=tenant_id,
@@ -36,6 +37,7 @@ class UserRepository:
             display_name=display_name,
             last_login_at=last_login_at,
             is_active=True,
+            is_admin=is_admin,
         )
         self.db.add(user)
         self.db.commit()

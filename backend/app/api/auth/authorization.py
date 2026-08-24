@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from app.api.auth.admin_emails import is_feed_source_admin
 from app.api.auth.dependencies import get_current_employee
 from app.api.auth.models import AuthenticatedUser
-from app.core.settings import Settings, get_settings
 from fastapi import Depends, HTTPException, status
 
 
-def can_manage_feed_sources(
-    user: AuthenticatedUser,
-    settings: Settings | None = None,
-) -> bool:
-    resolved_settings = settings or get_settings()
-    return is_feed_source_admin(user.email, resolved_settings)
+def can_manage_feed_sources(user: AuthenticatedUser) -> bool:
+    return user.is_admin
 
 
 def require_feed_source_manager(

@@ -14,6 +14,7 @@ class EmployeeResponse(BaseModel):
     name: str = Field(min_length=1)
     email: EmailStr
     designation: str = Field(min_length=1)
+    is_admin: bool = False
     can_manage_feed_sources: bool = False
 
 

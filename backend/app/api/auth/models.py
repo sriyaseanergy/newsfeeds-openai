@@ -9,3 +9,4 @@ class AuthenticatedUser:
     name: str
     designation: str = "Employee"
     emp_no: str | None = None
+    is_admin: bool = False

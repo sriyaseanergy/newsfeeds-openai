@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from app.api.auth.authorization import require_feed_source_manager
 from app.catalog.technology_domain.repository import TechnologyDomainRepository
 from app.catalog.technology_domain.schemas import (
     TechnologyDomainCreate,
@@ -32,6 +33,7 @@ def get_technology_domain_service(
 )
 def create_technology_domain(
     payload: TechnologyDomainCreate,
+    _employee=Depends(require_feed_source_manager),
     service: TechnologyDomainService = Depends(get_technology_domain_service),
 ) -> TechnologyDomainResponse:
     try:
@@ -62,6 +64,7 @@ def get_technology_domain(
 def update_technology_domain(
     domain_id: UUID,
     payload: TechnologyDomainUpdate,
+    _employee=Depends(require_feed_source_manager),
     service: TechnologyDomainService = Depends(get_technology_domain_service),
 ) -> TechnologyDomainResponse:
     try:
@@ -75,6 +78,7 @@ def update_technology_domain(
 @router.delete("/{domain_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_technology_domain(
     domain_id: UUID,
+    _employee=Depends(require_feed_source_manager),
     service: TechnologyDomainService = Depends(get_technology_domain_service),
 ) -> Response:
     try:

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.admin_emails import is_feed_source_admin
 from app.catalog.user.model import User
 from app.catalog.user.repository import UserRepository
 from app.catalog.user.schemas import EntraIdentity
+from app.core.settings import Settings, get_settings
 from sqlalchemy.exc import IntegrityError
 
 
@@ -13,8 +15,13 @@ class UserConflictError(Exception):
 
 
 class UserService:
-    def __init__(self, repository: UserRepository) -> None:
+    def __init__(
+        self,
+        repository: UserRepository,
+        settings: Settings | None = None,
+    ) -> None:
         self.repository = repository
+        self._settings = settings or get_settings()
 
     def record_login(self, identity: EntraIdentity) -> User:
         now = datetime.now(timezone.utc)
@@ -27,15 +34,18 @@ class UserService:
         )
         if existing is not None:
             self._apply_identity_updates(existing, identity, last_login_at=now)
+            self._maybe_promote_admin(existing, identity.email)
             return self.repository.save(existing)
 
+        email = self._optional_email(identity.email)
         try:
             return self.repository.create(
                 tenant_id=tenant_id,
                 entra_object_id=entra_object_id,
-                email=self._optional_email(identity.email),
+                email=email,
                 display_name=self._optional_display_name(identity.display_name),
                 last_login_at=now,
+                is_admin=self._should_bootstrap_admin(email),
             )
         except IntegrityError as exc:
             self.repository.rollback()
@@ -48,7 +58,20 @@ class UserService:
                     "User identity conflict could not be resolved after duplicate insert."
                 ) from exc
             self._apply_identity_updates(raced, identity, last_login_at=now)
+            self._maybe_promote_admin(raced, identity.email)
             return self.repository.save(raced)
+
+    def _should_bootstrap_admin(self, email: str | None) -> bool:
+        if email is None:
+            return False
+        return is_feed_source_admin(email, self._settings)
+
+    def _maybe_promote_admin(self, user: User, email: str | None) -> None:
+        if user.is_admin:
+            return
+        normalized = self._optional_email(email)
+        if normalized is not None and is_feed_source_admin(normalized, self._settings):
+            user.is_admin = True
 
     @staticmethod
     def _optional_email(value: str | None) -> str | None:

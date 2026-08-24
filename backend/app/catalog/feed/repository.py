@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from app.catalog.feed.model import Feed
 from app.catalog.feed.schemas import FeedCreate, FeedUpdate
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 
@@ -26,9 +28,31 @@ class FeedRepository:
         statement = select(Feed).where(Feed.url == url)
         return self.db.execute(statement).scalar_one_or_none()
 
-    def list(self) -> list[Feed]:
-        statement = select(Feed).order_by(Feed.created_at.desc())
+    def list(self, technology_domain_id: UUID | None = None) -> list[Feed]:
+        statement = select(Feed)
+        if technology_domain_id is not None:
+            statement = statement.where(Feed.technology_domain_id == technology_domain_id)
+        statement = statement.order_by(Feed.created_at.desc())
         return list(self.db.execute(statement).scalars().all())
+
+    def count_by_technology_domain_id(self, technology_domain_id: UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(Feed)
+            .where(Feed.technology_domain_id == technology_domain_id)
+        )
+        return int(self.db.execute(statement).scalar_one())
+
+    def count_by_technology_domain_ids(self, domain_ids: list[UUID]) -> dict[UUID, int]:
+        if not domain_ids:
+            return {}
+        statement = (
+            select(Feed.technology_domain_id, func.count())
+            .where(Feed.technology_domain_id.in_(domain_ids))
+            .group_by(Feed.technology_domain_id)
+        )
+        rows = self.db.execute(statement).all()
+        return {domain_id: int(count) for domain_id, count in rows}
 
     def update(self, feed: Feed, payload: FeedUpdate) -> Feed:
         update_data = self._to_persisted_dict(payload, exclude_unset=True)
