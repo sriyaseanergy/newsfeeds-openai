@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # Comma-separated emails allowed to manage feed sources (POST/PUT/DELETE /feeds).
     feed_source_admin_emails: str = ""
 
+    # JSON API ingestion (e.g. GitHub Security Advisories).
+    github_api_token: str = ""
+    json_api_max_pages: int = 10
+    json_api_timeout_seconds: float = 30.0
+
     # Microsoft Graph delegated Mail.Send for newsletters.
     # News Feeds backend -> delegated MSAL token -> Graph Mail.Send
     # -> GRAPH_SENDER_EMAIL (e.g. broadcast@seanergy.ai).

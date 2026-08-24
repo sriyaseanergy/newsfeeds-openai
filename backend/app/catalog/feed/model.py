@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 class FetchKind(str, Enum):
     RSS = "RSS"
     CRAWL = "CRAWL"
+    JSON_API = "JSON_API"
 
 
 class Feed(Base):

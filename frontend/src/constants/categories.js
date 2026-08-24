@@ -5,7 +5,7 @@ export const CAT_DESC = {
   'Expert Context': 'Expert opinions, deep technical analysis, and industry perspectives',
 }
 
-export const FETCH_KINDS = ['RSS', 'CRAWL']
+export const FETCH_KINDS = ['RSS', 'CRAWL', 'JSON_API']
 
 export const TECHNOLOGY_DOMAIN_COLORS = {
   AI: '#a78bfa',
