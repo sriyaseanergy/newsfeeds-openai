@@ -6,6 +6,15 @@ import { catColor } from '../../config/theme.js'
 import { htmlToText, trunc, relativeTime } from '../../utils/format.js'
 import { filterArticles, articleTechnologyDomain } from '../../utils/articles.js'
 
+function formatPublishedDate(dateStr) {
+  if (!dateStr) return ''
+  let d = String(dateStr)
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(d)) d = d.replace(' ', 'T') + 'Z'
+  const parsed = new Date(d)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
+}
+
 export default function ArticleList({ articles, selectedCat, typeFilter, loading, feeds, technologyDomains }) {
   const theme = useTheme()
   const items = filterArticles(articles || [], selectedCat, typeFilter, feeds, technologyDomains)
@@ -46,6 +55,8 @@ export default function ArticleList({ articles, selectedCat, typeFilter, loading
         const link = a.url && String(a.url).trim()
         const desc = trunc(htmlToText(a.summary || ''), 200)
         const sourceName = feeds.find(f => f.id === a.feed_id)?.name || ''
+        const imageUrl = a.image_url && String(a.image_url).trim()
+        const publishedDate = formatPublishedDate(a.published_at)
 
         return (
           <Box
@@ -63,48 +74,101 @@ export default function ArticleList({ articles, selectedCat, typeFilter, loading
             }}
           >
             <Box sx={{ width: 3, bgcolor: accBar, flexShrink: 0 }} />
-            <Box sx={{ flex: 1, p: '10px 14px', minWidth: 0 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.625, mb: 0.5 }}>
-                <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                  {trunc(sourceName || '', 24)}
-                </Typography>
-                {a.published_at && (
-                  <>
-                    <Typography variant="caption" color="text.disabled">·</Typography>
-                    <Typography variant="caption" color="text.disabled">
-                      {relativeTime(a.published_at)}
-                    </Typography>
-                  </>
-                )}
-              </Box>
-              <Typography
-                variant="body2"
-                sx={{
-                  lineHeight: 1.45,
-                  mb: desc ? 0.5 : 0,
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}
-              >
-                {a.title || 'Untitled'}
-              </Typography>
-              {desc && (
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
+            <Box
+              sx={{
+                flex: 1,
+                p: '10px 14px',
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 1.25,
+              }}
+            >
+              {imageUrl && (
+                <Box
+                  component="img"
+                  src={imageUrl}
+                  alt=""
                   sx={{
-                    lineHeight: 1.5,
+                    width: 76,
+                    height: 76,
+                    flexShrink: 0,
+                    objectFit: 'cover',
+                    borderRadius: 1,
+                    bgcolor: 'action.hover',
+                  }}
+                  onError={event => {
+                    event.currentTarget.style.display = 'none'
+                  }}
+                />
+              )}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.625, mb: 0.5 }}>
+                  {sourceName && (
+                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                      {trunc(sourceName, 24)}
+                    </Typography>
+                  )}
+                  {publishedDate && (
+                    <>
+                      {sourceName && (
+                        <Typography variant="caption" color="text.disabled">·</Typography>
+                      )}
+                      <Typography variant="caption" color="text.disabled">
+                        {publishedDate}
+                      </Typography>
+                    </>
+                  )}
+                  {categoryName && (
+                    <>
+                      {(sourceName || publishedDate) && (
+                        <Typography variant="caption" color="text.disabled">·</Typography>
+                      )}
+                      <Typography variant="caption" color="text.disabled" sx={{ textTransform: 'uppercase' }}>
+                        {categoryName}
+                      </Typography>
+                    </>
+                  )}
+                  {!publishedDate && a.published_at && (
+                    <>
+                      {sourceName && (
+                        <Typography variant="caption" color="text.disabled">·</Typography>
+                      )}
+                      <Typography variant="caption" color="text.disabled">
+                        {relativeTime(a.published_at)}
+                      </Typography>
+                    </>
+                  )}
+                </Box>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    lineHeight: 1.45,
+                    mb: desc ? 0.5 : 0,
                     overflow: 'hidden',
                     display: '-webkit-box',
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: 'vertical',
                   }}
                 >
-                  {desc}
+                  {a.title || 'Untitled'}
                 </Typography>
-              )}
+                {desc && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{
+                      lineHeight: 1.5,
+                      overflow: 'hidden',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}
+                  >
+                    {desc}
+                  </Typography>
+                )}
+              </Box>
             </Box>
           </Box>
         )
