@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from app.editorial.classification.enums import (
     Actionability,
@@ -20,6 +21,7 @@ class NewsletterArticle(BaseModel):
     source_name: str = Field(min_length=1, max_length=255)
     published_at: datetime | None = None
     article_type: ArticleType
+    technology_domain_id: UUID
     technology_domain: str = Field(default="", max_length=128)
     severity: Severity
     actionability: Actionability
@@ -49,6 +51,7 @@ def newsletter_article_from_pipeline(
     url: str,
     source_name: str,
     published_at: datetime | None,
+    technology_domain_id: UUID,
     technology_domain: str,
     classification: EditorialClassification,
     enrichment: EnrichedArticle,
@@ -60,6 +63,7 @@ def newsletter_article_from_pipeline(
         source_name=source_name,
         published_at=published_at,
         article_type=classification.article_type,
+        technology_domain_id=technology_domain_id,
         technology_domain=technology_domain,
         severity=classification.severity,
         actionability=classification.actionability,

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from app.catalog.feed.repository import FeedRepository
-from app.catalog.technology_domain.model import TechnologyDomain
+from app.catalog.technology_domain.model import TechnologyDomain, TechnologyDomainSchedule
 from app.catalog.technology_domain.repository import TechnologyDomainRepository
 from app.catalog.user_category_preference.repository import UserCategoryPreferenceRepository
 from app.catalog.user_category_preference.schemas import (
@@ -58,6 +58,26 @@ class UserCategoryPreferenceService:
         for item in payload.preferences:
             self._upsert_preference(user_id, item)
         return self.list_for_user(user_id)
+
+    def list_effective_enabled_for_schedule(
+        self,
+        user_id: UUID,
+        schedule: TechnologyDomainSchedule,
+    ) -> set[UUID]:
+        domains = self.technology_domain_repository.list()
+        preferences = {
+            preference.technology_domain_id: preference
+            for preference in self.preference_repository.list_by_user_id(user_id)
+        }
+        enabled: set[UUID] = set()
+        for domain in domains:
+            if not domain.is_enabled or domain.schedule != schedule:
+                continue
+            preference = preferences.get(domain.id)
+            user_enabled = preference.enabled if preference is not None else False
+            if user_enabled:
+                enabled.add(domain.id)
+        return enabled
 
     def toggle(
         self,
