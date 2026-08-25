@@ -8,8 +8,16 @@ import Paper from '@mui/material/Paper'
 import { API } from '../../config/api.js'
 import { apiFetch } from '../../services/api.js'
 import { FETCH_KINDS } from '../../constants/categories.js'
+import SectionTitle from './SectionTitle.jsx'
+import SettingsAddButton from './SettingsAddButton.jsx'
 
-export default function AddFeedForm({ technologyDomains, onAdd, canManage }) {
+export default function AddFeedForm({
+  technologyDomains,
+  onAdd,
+  isAdmin,
+  feeds,
+  children,
+}) {
   const empty = () => ({
     name: '',
     url: '',
@@ -35,7 +43,7 @@ export default function AddFeedForm({ technologyDomains, onAdd, canManage }) {
   const handleSubmit = async () => {
     if (!form.name.trim()) { setError('Name is required'); return }
     if (!form.url.trim()) { setError('URL is required'); return }
-    if (!form.technology_domain_id) { setError('Technology Domain is required'); return }
+    if (!form.technology_domain_id) { setError('Category is required'); return }
     if (form.fetch_kind === 'CRAWL') {
       const depth = Number(form.crawl_depth)
       if (!Number.isInteger(depth) || depth < 1) {
@@ -67,24 +75,76 @@ export default function AddFeedForm({ technologyDomains, onAdd, canManage }) {
     }
   }
 
-  if (!canManage) return null
+  const handleCancel = () => {
+    setOpen(false)
+    setError('')
+    setForm(empty())
+  }
+
+  const activeCount = feeds.filter(f => f.is_enabled).length
 
   return (
-    <Box sx={{ mb: 2 }}>
-      {!open ? (
-        <Button variant="contained" color="primary" onClick={() => setOpen(true)}>
-          + Add Feed
-        </Button>
-      ) : (
-        <Paper variant="outlined" sx={{ p: 2, borderColor: 'primary.main' }}>
-          <Typography variant="caption" fontWeight={700} color="primary.dark" sx={{ letterSpacing: '0.06em', textTransform: 'uppercase', mb: 1.5, display: 'block' }}>
+    <Box className="settings-card-inner">
+      <Box className="settings-section-block">
+        <Box className="settings-card-header">
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <SectionTitle showDivider={false}>Feed Sources</SectionTitle>
+            <Typography className="settings-subtext">
+              {feeds.length} feed{feeds.length !== 1 ? 's' : ''} configured · {activeCount} active
+            </Typography>
+          </Box>
+          {isAdmin && !open && (
+            <SettingsAddButton
+              onClick={() => setOpen(true)}
+              sx={{ flexShrink: 0, alignSelf: 'flex-start' }}
+            >
+              Add Feed
+            </SettingsAddButton>
+          )}
+        </Box>
+        <Box className="settings-section-divider" role="presentation" />
+      </Box>
+
+      {isAdmin && open && (
+        <Paper variant="outlined" className="settings-add-feed-form">
+          <Typography component="h3" className="settings-form-title">
             New Feed
           </Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1 }}>
-            <TextField label="Name" size="small" fullWidth value={form.name} onChange={e => set('name', e.target.value)} placeholder="OpenAI Blog" />
-            <TextField label="URL" size="small" fullWidth value={form.url} onChange={e => set('url', e.target.value)} placeholder="https://…/feed.xml" />
-            <TextField select label="Technology Domain" size="small" fullWidth value={form.technology_domain_id} onChange={e => set('technology_domain_id', e.target.value)}>
-              {technologyDomains.map(d => <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>)}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 1.25,
+              mb: 1.25,
+            }}
+          >
+            <TextField
+              label="Name"
+              size="small"
+              fullWidth
+              value={form.name}
+              onChange={e => set('name', e.target.value)}
+              placeholder="OpenAI Blog"
+            />
+            <TextField
+              label="URL"
+              size="small"
+              fullWidth
+              value={form.url}
+              onChange={e => set('url', e.target.value)}
+              placeholder="https://…/feed.xml"
+            />
+            <TextField
+              select
+              label="Category"
+              size="small"
+              fullWidth
+              value={form.technology_domain_id}
+              onChange={e => set('technology_domain_id', e.target.value)}
+            >
+              {technologyDomains.map(d => (
+                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+              ))}
             </TextField>
             <TextField
               select
@@ -101,7 +161,9 @@ export default function AddFeedForm({ technologyDomains, onAdd, canManage }) {
                 }))
               }}
             >
-              {FETCH_KINDS.map(kind => <MenuItem key={kind} value={kind}>{kind}</MenuItem>)}
+              {FETCH_KINDS.map(kind => (
+                <MenuItem key={kind} value={kind}>{kind}</MenuItem>
+              ))}
             </TextField>
             {form.fetch_kind === 'CRAWL' && (
               <TextField
@@ -117,19 +179,34 @@ export default function AddFeedForm({ technologyDomains, onAdd, canManage }) {
                 }}
               />
             )}
-            <Box sx={{ gridColumn: '1 / span 2' }}>
-              <TextField label="Description (optional)" size="small" fullWidth value={form.description} onChange={e => set('description', e.target.value)} placeholder="Short feed description" />
+            <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' } }}>
+              <TextField
+                label="Description (optional)"
+                size="small"
+                fullWidth
+                value={form.description}
+                onChange={e => set('description', e.target.value)}
+                placeholder="Short feed description"
+              />
             </Box>
           </Box>
-          {error && <Typography variant="caption" color="error" sx={{ mb: 1, display: 'block' }}>{error}</Typography>}
+          {error && (
+            <Typography variant="caption" color="error" sx={{ mb: 1.25, display: 'block', fontSize: 14 }}>
+              {error}
+            </Typography>
+          )}
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-            <Button size="small" onClick={() => { setOpen(false); setError('') }} disabled={saving}>Cancel</Button>
+            <Button size="small" onClick={handleCancel} disabled={saving}>
+              Cancel
+            </Button>
             <Button size="small" variant="contained" onClick={handleSubmit} disabled={saving}>
               {saving ? 'Creating…' : 'Create Feed'}
             </Button>
           </Box>
         </Paper>
       )}
+
+      {children}
     </Box>
   )
 }

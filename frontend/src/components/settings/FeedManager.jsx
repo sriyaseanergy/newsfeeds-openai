@@ -2,18 +2,19 @@ import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Switch from '@mui/material/Switch'
-import IconButton from '@mui/material/IconButton'
 import Chip from '@mui/material/Chip'
-import CircularProgress from '@mui/material/CircularProgress'
 import Paper from '@mui/material/Paper'
 import { useTheme } from '@mui/material/styles'
 import { API } from '../../config/api.js'
 import { apiFetch } from '../../services/api.js'
+import { useNotification } from '../notificationController.tsx'
 import { TECHNOLOGY_DOMAIN_COLORS } from '../../constants/categories.js'
 import { normalizeTechnologyDomain, technologyDomainNames } from '../../utils/articles.js'
+import SettingsDeleteButton from './SettingsDeleteButton.jsx'
 
-export default function FeedManager({ feeds, technologyDomains, onFeedsChange, canManage }) {
+export default function FeedManager({ feeds, technologyDomains, onFeedsChange, isAdmin }) {
   const theme = useTheme()
+  const { showNotification } = useNotification()
   const [toggling, setToggling] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const orderedTechnologyDomains = technologyDomainNames(technologyDomains)
@@ -31,7 +32,10 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
       })
       onFeedsChange()
     } catch (e) {
-      console.error(e)
+      showNotification({
+        severity: 'error',
+        description: `Unable to update feed: ${e.message}`,
+      })
     } finally {
       setToggling(null)
     }
@@ -43,8 +47,15 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
     try {
       await apiFetch(`${API.feeds}/${feed.id}`, { method: 'DELETE' })
       onFeedsChange()
+      showNotification({
+        severity: 'success',
+        description: `Feed "${feed.name}" deleted`,
+      })
     } catch (e) {
-      console.error(e)
+      showNotification({
+        severity: 'error',
+        description: `Unable to delete feed: ${e.message}`,
+      })
     } finally {
       setDeleting(null)
     }
@@ -52,8 +63,8 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
 
   if (!feeds.length) {
     return (
-      <Typography variant="body2" color="text.secondary" textAlign="center" py={3}>
-        {canManage ? 'No feeds configured. Add one above.' : 'No feeds configured.'}
+      <Typography variant="body2" className="settings-muted-text" textAlign="center" py={3}>
+        {isAdmin ? 'No feeds configured. Add one above.' : 'No feeds configured.'}
       </Typography>
     )
   }
@@ -76,10 +87,13 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
           <Box key={q}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75, pb: 0.75, borderBottom: 1, borderColor: 'divider' }}>
               <Box sx={{ width: 3, height: 14, borderRadius: 0.5, bgcolor: color, flexShrink: 0 }} />
-              <Typography variant="caption" fontWeight={700} sx={{ color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+              <Typography
+                className="settings-body-text"
+                sx={{ letterSpacing: '0.04em', textTransform: 'uppercase' }}
+              >
                 {q}
               </Typography>
-              <Typography variant="caption" color="text.disabled">
+              <Typography variant="caption" className="settings-muted-text">
                 {group.length} feed{group.length !== 1 ? 's' : ''}
               </Typography>
             </Box>
@@ -88,21 +102,20 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
                 <Paper
                   key={feed.id}
                   variant="outlined"
+                  className="settings-list-item"
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1.25,
                     px: 1.5,
                     py: 1,
-                    opacity: feed.is_enabled ? 1 : 0.45,
-                    transition: 'opacity 200ms ease',
                   }}
                 >
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body2" fontWeight={500} noWrap>
+                    <Typography variant="body2" className="settings-body-text" noWrap>
                       {feed.name}
                     </Typography>
-                    <Typography variant="caption" color="text.disabled" noWrap display="block">
+                    <Typography variant="caption" className="settings-muted-text" noWrap display="block">
                       {feed.url}
                     </Typography>
                   </Box>
@@ -112,16 +125,21 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, c
                     variant="outlined"
                     sx={{ fontSize: 10 }}
                   />
-                  <Switch
-                    size="small"
-                    checked={!!feed.is_enabled}
-                    onChange={() => handleToggle(feed)}
-                    disabled={toggling === feed.id}
-                  />
-                  {canManage && (
-                    <IconButton size="small" onClick={() => handleDelete(feed)} disabled={deleting === feed.id}>
-                      {deleting === feed.id ? <CircularProgress size={14} /> : '×'}
-                    </IconButton>
+                  {isAdmin && (
+                    <>
+                      <Switch
+                        size="small"
+                        color="primary"
+                        checked={!!feed.is_enabled}
+                        onChange={() => handleToggle(feed)}
+                        disabled={toggling === feed.id}
+                      />
+                      <SettingsDeleteButton
+                        onClick={() => handleDelete(feed)}
+                        loading={deleting === feed.id}
+                        title="Delete feed"
+                      />
+                    </>
                   )}
                 </Paper>
               ))}

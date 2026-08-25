@@ -5,7 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import { readStoredEmployee, clearStoredEmployee } from "../services/auth.js";
+import { readStoredEmployee, clearStoredEmployee, persistEmployee } from "../services/auth.js";
 import {
   getMsalInstance,
   getMsalRedirectUri,
@@ -27,6 +27,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!sessionEmployee) return;
+    persistEmployee(sessionEmployee);
     ensureMsalAccount().catch(() => {});
   }, [sessionEmployee]);
 

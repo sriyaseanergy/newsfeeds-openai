@@ -14,6 +14,7 @@ export const API = {
   status: `${API_BASE}/api/status`,
   feedsHealth: `${API_BASE}/api/feeds/health`,
   authSession: `${API_BASE}/api/auth/session`,
+  domainPreferences: `${API_BASE}/api/me/domain-preferences`,
 }
 
 export const routerBasename = (() => {

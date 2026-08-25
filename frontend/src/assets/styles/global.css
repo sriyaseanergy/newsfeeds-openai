@@ -16,6 +16,254 @@ body,
   font-weight: 500;
 }
 
+.settings-layout-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+.settings-layout-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  background: #ffffff;
+}
+
+.settings-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 960px) {
+  .settings-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-card {
+  padding: 0;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  height: min(460px, calc(100vh - 220px));
+  max-height: min(460px, calc(100vh - 220px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-card-inner {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+  padding-right: 16px;
+}
+
+.settings-card .MuiSwitch-root {
+  margin-right: 2px;
+}
+
+.settings-delete-btn {
+  color: #555555;
+}
+
+.settings-delete-btn:hover {
+  color: #f87171;
+  background-color: rgba(248, 113, 113, 0.08);
+}
+
+.settings-delete-btn.Mui-disabled {
+  color: rgba(0, 0, 0, 0.38);
+}
+
+.settings-delete-btn-spinner {
+  color: #555555;
+}
+
+.settings-section-header {
+  margin-bottom: 16px;
+}
+
+.settings-section-title {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  display: block;
+  color: #111111;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.settings-section-divider {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.settings-subtext {
+  color: #444444;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-muted-text {
+  color: #444444;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-body-text {
+  color: #1a1a1a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-list-item {
+  border: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+.settings-card,
+.settings-card .MuiTypography-root,
+.settings-card .MuiButton-root,
+.settings-card .MuiInputBase-input,
+.settings-card .MuiChip-label {
+  font-weight: 600;
+}
+
+html[data-theme="dark"] .settings-layout-panel,
+html[data-theme="dark"] .settings-card {
+  background: #1a1a1a;
+  border-color: #2e2e2e;
+}
+
+html[data-theme="dark"] .settings-layout-body {
+  background: #121212;
+}
+
+html[data-theme="dark"] .settings-section-divider {
+  border-color: #2e2e2e;
+}
+
+html[data-theme="dark"] .settings-list-item {
+  background: #1a1a1a;
+  border-color: #2e2e2e;
+}
+
+html[data-theme="dark"] .settings-delete-btn {
+  color: #b0b0b0;
+}
+
+html[data-theme="dark"] .settings-delete-btn:hover {
+  color: #f87171;
+  background-color: rgba(248, 113, 113, 0.12);
+}
+
+html[data-theme="dark"] .settings-delete-btn.Mui-disabled {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+html[data-theme="dark"] .settings-delete-btn-spinner {
+  color: #b0b0b0;
+}
+
+html[data-theme="dark"] .settings-section-title {
+  color: #e8e8e8;
+}
+
+html[data-theme="dark"] .settings-subtext {
+  color: #b0b0b0;
+}
+
+html[data-theme="dark"] .settings-muted-text {
+  color: #b0b0b0;
+}
+
+html[data-theme="dark"] .settings-body-text {
+  color: #e8e8e8;
+}
+
+.settings-form-title {
+  color: #111111;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: block;
+}
+
+html[data-theme="dark"] .settings-form-title {
+  color: #e8e8e8;
+}
+
+.settings-section-block {
+  margin-bottom: 16px;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.settings-add-row .MuiTextField-root {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-add-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  min-width: max-content;
+  padding-left: 14px;
+  padding-right: 14px;
+  background-color: #29c5f4;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.settings-add-btn:hover {
+  background-color: #29c5f4;
+  box-shadow: none;
+}
+
+.settings-add-btn.Mui-disabled {
+  background-color: rgba(41, 197, 244, 0.45);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.settings-add-feed-form {
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  background: #ffffff;
+}
+
+html[data-theme="dark"] .settings-add-feed-form {
+  background: #141414;
+  border-color: #2e2e2e;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
