@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import { canManageFeedSources } from "../services/auth.js";
 import AppLayout from "../components/layout/AppLayout.jsx";
 import LoginPage from "../pages/publicPages/LoginPage.jsx";
 import ArticlesPage from "../pages/protectedPages/ArticlesPage.jsx";
@@ -35,26 +34,7 @@ function FeedHealthRoute() {
 }
 
 function SettingsRoute() {
-  const { sessionEmployee } = useAuth();
-  if (!canManageFeedSources(sessionEmployee)) {
-    return <Navigate to="/articles" replace />;
-  }
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        borderRadius: 2,
-        border: 1,
-        borderColor: "divider",
-      }}
-    >
-      <SettingsPage />
-    </Paper>
-  );
+  return <SettingsPage />;
 }
 
 function PublicLoginRoute() {

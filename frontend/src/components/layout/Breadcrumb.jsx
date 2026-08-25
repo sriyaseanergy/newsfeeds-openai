@@ -17,7 +17,16 @@ export default function Breadcrumb({ selectedCat }) {
       : selectedCat || "Articles";
 
   return (
-    <Box sx={{ px: 2.5, py: 1.5, flexShrink: 0 }}>
+    <Box
+      sx={{
+        px: 3,
+        py: 2,
+        flexShrink: 0,
+        borderBottom: 1,
+        borderColor: "divider",
+        bgcolor: "background.paper",
+      }}
+    >
       <Breadcrumbs
         separator="/"
         sx={{

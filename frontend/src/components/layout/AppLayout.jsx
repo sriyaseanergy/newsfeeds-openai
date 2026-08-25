@@ -4,7 +4,6 @@ import Box from '@mui/material/Box'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useAppData } from '../../context/AppDataContext.jsx'
 import { useThemeMode } from '../../context/ThemeProviderWrapper.jsx'
-import { canManageFeedSources } from '../../services/auth.js'
 import { technologyDomainNames } from '../../utils/articles.js'
 import { DEFAULT_TECHNOLOGY_DOMAINS } from '../../constants/categories.js'
 import Header from './Header.jsx'
@@ -36,7 +35,7 @@ export default function AppLayout() {
     }
   }, [categories, selectedCat])
 
-  const canManageSettings = canManageFeedSources(sessionEmployee)
+  const canManageSettings = Boolean(sessionEmployee)
 
   useEffect(() => {
     if (location.pathname === '/feed-health') fetchFeedHealth()
@@ -82,7 +81,18 @@ export default function AppLayout() {
 
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
           <Breadcrumb selectedCat={selectedCat} />
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', px: 2, pb: 1, minHeight: 0, overflow: 'hidden' }}>
+          <Box
+            sx={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              px: 3,
+              pt: 2,
+              pb: 1.5,
+              minHeight: 0,
+              overflow: 'hidden',
+            }}
+          >
             <Outlet context={{ selectedCat }} />
           </Box>
           <Footer />

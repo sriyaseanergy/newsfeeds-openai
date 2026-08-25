@@ -1,14 +1,17 @@
+import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 
-export default function SectionTitle({ children }) {
+export default function SectionTitle({ children, showDivider = true }) {
   return (
-    <Typography
-      variant="caption"
-      fontWeight={700}
-      color="text.secondary"
-      sx={{ letterSpacing: '0.08em', textTransform: 'uppercase', mb: 1.25, display: 'block' }}
-    >
-      {children}
-    </Typography>
+    <Box className={showDivider ? 'settings-section-header' : undefined}>
+      <Typography
+        component="h2"
+        className="settings-section-title"
+        sx={showDivider ? undefined : { mb: 0 }}
+      >
+        {children}
+      </Typography>
+      {showDivider && <Box className="settings-section-divider" role="presentation" />}
+    </Box>
   )
 }
