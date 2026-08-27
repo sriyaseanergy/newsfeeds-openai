@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { API } from '../config/api.js'
 import { apiFetch } from '../services/api.js'
-import { DEFAULT_TECHNOLOGY_DOMAINS } from '../constants/categories.js'
 
 const AppDataContext = createContext(null)
 
@@ -32,9 +31,7 @@ export function AppDataProvider({ children }) {
   const [recipients, setRecipients] = useState([])
   const [recipientsLoading, setRecipientsLoading] = useState(false)
   const [articles, setArticles] = useState([])
-  const [feedHealth, setFeedHealth] = useState([])
   const [artLoading, setArtLoading] = useState(false)
-  const [healthLoading, setHealthLoading] = useState(false)
 
   const articlesRef = useRef(articles)
   const feedsRef = useRef(feeds)
@@ -83,9 +80,7 @@ export function AppDataProvider({ children }) {
       setTechnologyDomains(Array.isArray(d) ? d : [])
     } catch (e) {
       console.error(e)
-      setTechnologyDomains(
-        DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))
-      )
+      setTechnologyDomains([])
     }
   }, [])
 
@@ -98,15 +93,6 @@ export function AppDataProvider({ children }) {
       console.error(e)
     } finally {
       setArtLoading(false)
-    }
-  }, [])
-
-  const fetchFeedHealth = useCallback(async () => {
-    setHealthLoading(true)
-    try {
-      setFeedHealth([])
-    } finally {
-      setHealthLoading(false)
     }
   }, [])
 
@@ -129,9 +115,7 @@ export function AppDataProvider({ children }) {
         if (Array.isArray(domains)) {
           setTechnologyDomains(domains)
         } else {
-          setTechnologyDomains(
-            DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))
-          )
+          setTechnologyDomains([])
         }
       })
       .catch(e => {
@@ -169,16 +153,13 @@ export function AppDataProvider({ children }) {
     recipients,
     recipientsLoading,
     articles,
-    feedHealth,
     artLoading,
-    healthLoading,
     setRecipients,
     fetchStatus,
     fetchRecipients,
     fetchFeeds,
     fetchTechnologyDomains,
     fetchArticles,
-    fetchFeedHealth,
   }
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>

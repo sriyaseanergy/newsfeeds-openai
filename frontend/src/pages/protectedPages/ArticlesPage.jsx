@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import Paper from '@mui/material/Paper'
 import { useAppData } from '../../context/AppDataContext.jsx'
@@ -11,37 +10,22 @@ export default function ArticlesPage() {
     articles,
     feeds,
     technologyDomains,
-    statusData,
     artLoading,
   } = useAppData()
 
-  const [typeFilter, setTypeFilter] = useState('All')
-
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        borderRadius: 2,
-        border: 1,
-        borderColor: 'divider',
-      }}
-    >
+    <Paper elevation={0} className="articles-page-panel">
       <Topbar
         selectedCat={selectedCat}
-        typeFilter={typeFilter}
-        onTypeFilter={setTypeFilter}
-        statusData={statusData}
+        technologyDomains={technologyDomains}
+        articles={articles}
+        feeds={feeds}
       />
       <ArticleList
         articles={articles}
         feeds={feeds}
         technologyDomains={technologyDomains}
         selectedCat={selectedCat}
-        typeFilter={typeFilter}
         loading={artLoading}
       />
     </Paper>

@@ -12,7 +12,6 @@ export const API = {
   feeds: `${API_BASE}/api/feeds`,
   technologyDomains: `${API_BASE}/api/technology-domains`,
   status: `${API_BASE}/api/status`,
-  feedsHealth: `${API_BASE}/api/feeds/health`,
   authSession: `${API_BASE}/api/auth/session`,
   domainPreferences: `${API_BASE}/api/me/domain-preferences`,
 }

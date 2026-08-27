@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useAppData } from '../../context/AppDataContext.jsx'
 import { useThemeMode } from '../../context/ThemeProviderWrapper.jsx'
 import { technologyDomainNames } from '../../utils/articles.js'
-import { DEFAULT_TECHNOLOGY_DOMAINS } from '../../constants/categories.js'
 import Header from './Header.jsx'
 import Sidebar from './Sidebar.jsx'
 import Footer from './Footer.jsx'
@@ -20,12 +19,11 @@ export default function AppLayout() {
     articles,
     feeds,
     technologyDomains,
-    fetchFeedHealth,
     fetchFeeds,
   } = useAppData()
 
   const [drawerCollapsed, setDrawerCollapsed] = useState(false)
-  const [selectedCat, setSelectedCat] = useState(DEFAULT_TECHNOLOGY_DOMAINS[0])
+  const [selectedCat, setSelectedCat] = useState('')
 
   const categories = technologyDomainNames(technologyDomains)
 
@@ -38,9 +36,8 @@ export default function AppLayout() {
   const canManageSettings = Boolean(sessionEmployee)
 
   useEffect(() => {
-    if (location.pathname === '/feed-health') fetchFeedHealth()
     if (location.pathname === '/settings') fetchFeeds()
-  }, [location.pathname, fetchFeedHealth, fetchFeeds])
+  }, [location.pathname, fetchFeeds])
 
   const handleSelectCat = cat => {
     setSelectedCat(cat)
