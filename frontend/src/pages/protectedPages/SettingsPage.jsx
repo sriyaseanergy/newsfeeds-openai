@@ -16,6 +16,8 @@ import FeedManager from "../../components/settings/FeedManager.jsx";
 import SectionTitle from "../../components/settings/SectionTitle.jsx";
 import SettingsDeleteButton from "../../components/settings/SettingsDeleteButton.jsx";
 import SettingsAddButton from "../../components/settings/SettingsAddButton.jsx";
+import ConfirmDeleteDialog from "../../components/settings/ConfirmDeleteDialog.jsx";
+import CustomLoader from "../../components/CustomLoader.jsx";
 
 export default function SettingsPage() {
   const theme = useTheme();
@@ -26,6 +28,7 @@ export default function SettingsPage() {
     technologyDomains,
     recipients,
     recipientsLoading,
+    feedsLoading,
     setRecipients,
     fetchFeeds,
     fetchTechnologyDomains,
@@ -33,10 +36,25 @@ export default function SettingsPage() {
 
   const userIsAdmin = checkIsAdmin(sessionEmployee);
   const [settingsRefresh, setSettingsRefresh] = useState(0);
+  const [domainsLoading, setDomainsLoading] = useState(true);
+  const [domainsBusy, setDomainsBusy] = useState(false);
+  const [feedsBusy, setFeedsBusy] = useState(false);
+  const [feedFormBusy, setFeedFormBusy] = useState(false);
   const [input, setInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState(null);
-  const [recError, setRecError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [validationError, setValidationError] = useState("");
+
+  const recipientsBusy = adding || removing !== null;
+  const settingsLoading =
+    recipientsLoading
+    || domainsLoading
+    || feedsLoading
+    || domainsBusy
+    || feedsBusy
+    || feedFormBusy
+    || recipientsBusy;
 
   const validEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
@@ -48,14 +66,14 @@ export default function SettingsPage() {
   const handleAddRecipient = async () => {
     const email = input.trim().toLowerCase();
     if (!email) {
-      setRecError("Email is required");
+      setValidationError("Email is required");
       return;
     }
     if (!validEmail(email)) {
-      setRecError("Please enter a valid email address");
+      setValidationError("Please enter a valid email address");
       return;
     }
-    setRecError("");
+    setValidationError("");
     setAdding(true);
     try {
       const created = await apiFetch(API.emails, {
@@ -64,33 +82,35 @@ export default function SettingsPage() {
       });
       setRecipients((prev) => [created, ...prev]);
       setInput("");
+      showNotification({
+        severity: "success",
+        description: `Recipient "${email}" added`,
+      });
     } catch (e) {
       const msg = String(e?.message || "");
-      if (msg.includes("409"))
-        setRecError("This email recipient already exists");
-      else if (msg.includes("422"))
-        setRecError("Please enter a valid email address");
-      else setRecError(`Unable to add recipient: ${msg}`);
+      let description = `Unable to add recipient: ${msg}`;
+      if (msg.includes("409")) description = "This email recipient already exists";
+      else if (msg.includes("422")) description = "Please enter a valid email address";
+      showNotification({ severity: "error", description });
     } finally {
       setAdding(false);
     }
   };
 
-  const handleRemoveRecipient = async (recipient) => {
-    if (!confirm(`Remove "${recipient.email}"?`)) return;
-    setRecError("");
-    setRemoving(recipient.id);
+  const handleConfirmRemoveRecipient = async () => {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setRemoving(target.id);
     try {
-      await apiFetch(`${API.emails}/${recipient.id}`, { method: "DELETE" });
-      setRecipients((prev) => prev.filter((r) => r.id !== recipient.id));
+      await apiFetch(`${API.emails}/${target.id}`, { method: "DELETE" });
+      setRecipients((prev) => prev.filter((r) => r.id !== target.id));
       showNotification({
         severity: "success",
-        description: `Recipient "${recipient.email}" removed`,
+        description: `Recipient "${target.email}" removed`,
       });
     } catch (e) {
       const msg = String(e?.message || "");
-      if (msg.includes("404")) setRecError("Recipient was already removed");
-      else setRecError(`Unable to remove recipient: ${msg}`);
       showNotification({
         severity: "error",
         description: msg.includes("404")
@@ -104,12 +124,17 @@ export default function SettingsPage() {
 
   return (
     <Paper elevation={0} className="settings-layout-panel">
-      <Box className="settings-layout-body">
+      <Box
+        className={`settings-layout-body settings-layout-body--relative${settingsLoading ? " settings-layout-body--blocked" : ""}`}
+      >
+        {settingsLoading && <CustomLoader />}
         <Box className="settings-card-grid">
           <Paper variant="outlined" className="settings-card">
             <ManageTechnologyDomains
               onTechnologyDomainsChange={fetchTechnologyDomains}
               onFeedsChange={handleFeedsChange}
+              onLoadingChange={setDomainsLoading}
+              onBusyChange={setDomainsBusy}
               isAdmin={userIsAdmin}
               refreshToken={settingsRefresh}
             />
@@ -119,6 +144,7 @@ export default function SettingsPage() {
             <AddFeedForm
               technologyDomains={technologyDomains}
               onAdd={handleFeedsChange}
+              onBusyChange={setFeedFormBusy}
               isAdmin={userIsAdmin}
               feeds={feeds}
             >
@@ -126,15 +152,16 @@ export default function SettingsPage() {
                 feeds={feeds}
                 technologyDomains={technologyDomains}
                 onFeedsChange={handleFeedsChange}
+                onBusyChange={setFeedsBusy}
                 isAdmin={userIsAdmin}
               />
             </AddFeedForm>
           </Paper>
 
-          <Paper variant="outlined" className="settings-card">
-            <Box className="settings-card-inner">
-              <SectionTitle>Email Recipients</SectionTitle>
-              {userIsAdmin && (
+          {userIsAdmin && (
+            <Paper variant="outlined" className="settings-card">
+              <Box className="settings-card-inner">
+                <SectionTitle>Email Recipients</SectionTitle>
                 <Box className="settings-add-row">
                   <TextField
                     size="small"
@@ -142,78 +169,79 @@ export default function SettingsPage() {
                     value={input}
                     onChange={(e) => {
                       setInput(e.target.value);
-                      setRecError("");
+                      setValidationError("");
                     }}
                     onKeyDown={(e) => e.key === "Enter" && handleAddRecipient()}
                     placeholder="Email address"
-                    error={Boolean(recError)}
+                    error={Boolean(validationError)}
+                    helperText={validationError || " "}
                   />
                   <SettingsAddButton onClick={handleAddRecipient} disabled={adding}>
                     {adding ? "Adding…" : "Add Email"}
                   </SettingsAddButton>
                 </Box>
-              )}
-              {recError && (
-                <Typography
-                  variant="caption"
-                  color="error"
-                  sx={{ mb: 1, display: "block", fontSize: 14 }}
-                >
-                  {recError}
-                </Typography>
-              )}
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-                {!recipientsLoading && recipients.length === 0 ? (
-                  <Typography
-                    variant="body2"
-                    className="settings-muted-text"
-                    textAlign="center"
-                    py={1.5}
-                  >
-                    No recipients configured
-                  </Typography>
-                ) : (
-                  recipients.map((recipient) => (
-                    <Paper
-                      key={recipient.id}
-                      variant="outlined"
-                      className="settings-list-item"
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1.25,
-                        px: 1.5,
-                        py: 0.875,
-                      }}
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                  {!recipientsLoading && recipients.length === 0 ? (
+                    <Typography
+                      variant="body2"
+                      className="settings-muted-text"
+                      textAlign="center"
+                      py={1.5}
                     >
-                      <Box
+                      No recipients configured
+                    </Typography>
+                  ) : (
+                    recipients.map((recipient) => (
+                      <Paper
+                        key={recipient.id}
+                        variant="outlined"
+                        className="settings-list-item"
                         sx={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          bgcolor: recipient.is_enabled
-                            ? theme.palette.success.main
-                            : theme.palette.text.secondary,
-                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1.25,
+                          px: 1.5,
+                          py: 0.875,
                         }}
-                      />
-                      <Typography variant="body2" className="settings-body-text" sx={{ flex: 1 }}>
-                        {recipient.email}
-                      </Typography>
-                      {userIsAdmin && (
+                      >
+                        <Box
+                          sx={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            bgcolor: recipient.is_enabled
+                              ? theme.palette.success.main
+                              : theme.palette.text.secondary,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Typography variant="body2" className="settings-body-text" sx={{ flex: 1 }}>
+                          {recipient.email}
+                        </Typography>
                         <SettingsDeleteButton
-                          onClick={() => handleRemoveRecipient(recipient)}
-                          loading={removing === recipient.id}
+                          onClick={() => setDeleteTarget(recipient)}
                           title="Remove recipient"
                         />
-                      )}
-                    </Paper>
-                  ))
-                )}
+                      </Paper>
+                    ))
+                  )}
+                </Box>
               </Box>
-            </Box>
-          </Paper>
+            </Paper>
+          )}
         </Box>
+        <ConfirmDeleteDialog
+          open={Boolean(deleteTarget)}
+          title="Remove recipient"
+          message={
+            deleteTarget
+              ? `Are you sure you want to remove "${deleteTarget.email}"?`
+              : ""
+          }
+          confirmLabel="Remove"
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmRemoveRecipient}
+        />
       </Box>
     </Paper>
   );

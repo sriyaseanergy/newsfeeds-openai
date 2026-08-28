@@ -19,6 +19,7 @@ function fetchInitialData() {
       apiFetch(API.emails).catch(() => []),
       apiFetch(API.articles).catch(() => []),
       apiFetch(API.technologyDomains).catch(() => null),
+      apiFetch(API.feeds).catch(() => []),
     ])
   }
   return initialLoadPromise
@@ -32,6 +33,7 @@ export function AppDataProvider({ children }) {
   const [recipientsLoading, setRecipientsLoading] = useState(false)
   const [articles, setArticles] = useState([])
   const [artLoading, setArtLoading] = useState(false)
+  const [feedsLoading, setFeedsLoading] = useState(false)
 
   const articlesRef = useRef(articles)
   const feedsRef = useRef(feeds)
@@ -66,11 +68,14 @@ export function AppDataProvider({ children }) {
   }, [])
 
   const fetchFeeds = useCallback(async () => {
+    setFeedsLoading(true)
     try {
       const d = await apiFetch(API.feeds)
       setFeeds(Array.isArray(d) ? d : [])
     } catch (e) {
       console.error(e)
+    } finally {
+      setFeedsLoading(false)
     }
   }, [])
 
@@ -105,13 +110,15 @@ export function AppDataProvider({ children }) {
     let cancelled = false
     setRecipientsLoading(true)
     setArtLoading(true)
+    setFeedsLoading(true)
 
     fetchInitialData()
-      .then(([emails, arts, domains]) => {
+      .then(([emails, arts, domains, feedList]) => {
         if (cancelled) return
 
         setRecipients(Array.isArray(emails) ? emails : [])
         setArticles(Array.isArray(arts) ? arts : [])
+        setFeeds(Array.isArray(feedList) ? feedList : [])
         if (Array.isArray(domains)) {
           setTechnologyDomains(domains)
         } else {
@@ -125,6 +132,7 @@ export function AppDataProvider({ children }) {
         if (!cancelled) {
           setRecipientsLoading(false)
           setArtLoading(false)
+          setFeedsLoading(false)
         }
       })
 
@@ -154,6 +162,7 @@ export function AppDataProvider({ children }) {
     recipientsLoading,
     articles,
     artLoading,
+    feedsLoading,
     setRecipients,
     fetchStatus,
     fetchRecipients,

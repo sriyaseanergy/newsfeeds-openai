@@ -1,83 +1,126 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import Paper from '@mui/material/Paper'
-import { catColor } from '../../config/theme.js'
 import { htmlToText, trunc } from '../../utils/format.js'
 import { filterArticles } from '../../utils/articles.js'
+import CustomLoader from '../CustomLoader.jsx'
+
+function getHostname(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function getFaviconUrl(url) {
+  const host = getHostname(url)
+  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : ''
+}
 
 function formatPublishedDate(dateStr) {
   if (!dateStr) return ''
-  let d = String(dateStr)
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(d)) d = d.replace(' ', 'T') + 'Z'
-  const parsed = new Date(d)
+  const parsed = new Date(dateStr)
   if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString().slice(0, 10)
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
-function ArticleCardMedia({ imageUrl, title, accent }) {
+function SourceBadge({ name, url }) {
   const [failed, setFailed] = useState(false)
-  const showImage = Boolean(imageUrl) && !failed
+  const favicon = getFaviconUrl(url)
 
   return (
-    <Box className="article-card-media">
-      {showImage ? (
+    <Box className="article-feed-source">
+      {favicon && !failed ? (
         <Box
           component="img"
-          src={imageUrl}
+          src={favicon}
           alt=""
-          className="article-card-image"
+          className="article-feed-favicon"
+          loading="lazy"
           onError={() => setFailed(true)}
         />
       ) : (
-        <Box
-          className="article-card-placeholder"
-          sx={{
-            background: `linear-gradient(135deg, ${accent}33 0%, ${accent}14 100%)`,
-          }}
-        >
-          <Typography className="article-card-placeholder-text">
-            {(title || 'Article').charAt(0).toUpperCase()}
-          </Typography>
+        <Box className="article-feed-favicon article-feed-favicon--fallback">
+          {(name || '?').charAt(0).toUpperCase()}
         </Box>
       )}
+      <Typography className="article-feed-source-name">{name}</Typography>
     </Box>
   )
 }
 
-function ArticleCard({ article, feeds, technologyDomains, accent }) {
-  const link = article.url && String(article.url).trim()
-  const desc = trunc(htmlToText(article.summary || ''), 140)
-  const sourceName = feeds.find(f => f.id === article.feed_id)?.name || ''
-  const imageUrl = article.image_url && String(article.image_url).trim()
-  const publishedDate = formatPublishedDate(article.published_at)
+function ArticleThumb({ imageUrl }) {
+  const [failed, setFailed] = useState(false)
+  if (!imageUrl || failed) return null
 
   return (
-    <Paper
-      variant="outlined"
-      className="article-card"
+    <Box
+      component="img"
+      src={imageUrl}
+      alt=""
+      className="article-feed-thumb"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+function ArticleRow({ article, feed }) {
+  const link = article.url && String(article.url).trim()
+  const sourceName = feed?.name || getHostname(article.url) || 'Source'
+  const sourceUrl = feed?.url || article.url || ''
+  const imageUrl = article.image_url && String(article.image_url).trim()
+  const publishedDate = formatPublishedDate(article.published_at)
+  const author = article.author && String(article.author).trim()
+  const summary = trunc(htmlToText(article.summary || ''), 120)
+
+  const metaParts = []
+  if (author) metaParts.push(`By ${author}`)
+  if (publishedDate) metaParts.push(publishedDate)
+
+  return (
+    <Box
+      className="article-feed-row"
       onClick={() => link && window.open(link, '_blank', 'noopener')}
       sx={{ cursor: link ? 'pointer' : 'default' }}
     >
-      <ArticleCardMedia
-        imageUrl={imageUrl}
-        title={article.title}
-        accent={accent}
-      />
-      <Box className="article-card-body">
-        <Typography className="article-card-meta">
-          {[sourceName, publishedDate].filter(Boolean).join(' · ')}
-        </Typography>
-        <Typography className="article-card-title">
+      <Box className="article-feed-content">
+        <SourceBadge name={sourceName} url={sourceUrl} />
+        <Typography className="article-feed-title">
           {article.title || 'Untitled'}
         </Typography>
-        {desc && (
-          <Typography className="article-card-summary">
-            {desc}
+        {metaParts.length > 0 && (
+          <Typography className="article-feed-meta">
+            {metaParts.join(' · ')}
+          </Typography>
+        )}
+        {summary && (
+          <Typography className="article-feed-summary">
+            {summary}
           </Typography>
         )}
       </Box>
-    </Paper>
+      <ArticleThumb imageUrl={imageUrl} />
+    </Box>
+  )
+}
+
+function ArticleColumn({ items, feeds }) {
+  return (
+    <Box className="articles-feed-column">
+      {items.map(article => (
+        <ArticleRow
+          key={article.id || article.url || article.title}
+          article={article}
+          feed={feeds.find(f => f.id === article.feed_id)}
+        />
+      ))}
+    </Box>
   )
 }
 
@@ -88,34 +131,59 @@ export default function ArticleList({
   feeds,
   technologyDomains,
 }) {
-  const items = filterArticles(articles || [], selectedCat, feeds, technologyDomains)
-  const accent = catColor(selectedCat)
+  const items = useMemo(
+    () => filterArticles(articles || [], selectedCat, feeds, technologyDomains),
+    [articles, selectedCat, feeds, technologyDomains],
+  )
 
-  if (loading) {
-    return <Box className="articles-page-body" />
-  }
+  const [renderReady, setRenderReady] = useState(false)
 
-  if (!items.length) {
-    return (
-      <Box className="articles-page-empty">
-        <Typography className="articles-muted-text">No articles in this category</Typography>
-      </Box>
-    )
-  }
+  useEffect(() => {
+    if (loading) {
+      setRenderReady(false)
+      return undefined
+    }
+
+    if (!items.length) {
+      setRenderReady(true)
+      return undefined
+    }
+
+    setRenderReady(false)
+    let cancelled = false
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) setRenderReady(true)
+      })
+    })
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [loading, selectedCat, items])
+
+  const showLoader = loading || !renderReady
+  const visible = items.slice(0, 80)
+  const splitAt = Math.ceil(visible.length / 2)
+  const leftItems = visible.slice(0, splitAt)
+  const rightItems = visible.slice(splitAt)
 
   return (
-    <Box className="articles-page-body">
-      <Box className="articles-grid">
-        {items.slice(0, 80).map(article => (
-          <ArticleCard
-            key={article.id || article.url || article.title}
-            article={article}
-            feeds={feeds}
-            technologyDomains={technologyDomains}
-            accent={accent}
-          />
-        ))}
-      </Box>
+    <Box className="articles-page-body articles-page-body--relative">
+      {showLoader && <CustomLoader />}
+      {!loading && !items.length ? (
+        <Box className="articles-page-empty">
+          <Typography className="articles-muted-text">No articles in this category</Typography>
+        </Box>
+      ) : (
+        <Box className="articles-feed-grid">
+          <ArticleColumn items={leftItems} feeds={feeds} />
+          {rightItems.length > 0 && (
+            <ArticleColumn items={rightItems} feeds={feeds} />
+          )}
+        </Box>
+      )}
     </Box>
   )
 }

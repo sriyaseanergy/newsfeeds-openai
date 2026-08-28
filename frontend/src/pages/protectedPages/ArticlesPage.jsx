@@ -1,7 +1,6 @@
 import { useOutletContext } from 'react-router-dom'
 import Paper from '@mui/material/Paper'
 import { useAppData } from '../../context/AppDataContext.jsx'
-import Topbar from '../../components/articles/Topbar.jsx'
 import ArticleList from '../../components/articles/ArticleList.jsx'
 
 export default function ArticlesPage() {
@@ -11,22 +10,17 @@ export default function ArticlesPage() {
     feeds,
     technologyDomains,
     artLoading,
+    feedsLoading,
   } = useAppData()
 
   return (
     <Paper elevation={0} className="articles-page-panel">
-      <Topbar
-        selectedCat={selectedCat}
-        technologyDomains={technologyDomains}
-        articles={articles}
-        feeds={feeds}
-      />
       <ArticleList
         articles={articles}
         feeds={feeds}
         technologyDomains={technologyDomains}
         selectedCat={selectedCat}
-        loading={artLoading}
+        loading={artLoading || feedsLoading}
       />
     </Paper>
   )
