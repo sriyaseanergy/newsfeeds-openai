@@ -6,16 +6,17 @@ import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import { API } from '../../config/api.js'
 import { apiFetch } from '../../services/api.js'
-import { catColor } from '../../config/theme.js'
-import { TECHNOLOGY_DOMAIN_COLORS } from '../../constants/categories.js'
 import { useNotification } from '../notificationController.tsx'
 import SectionTitle from './SectionTitle.jsx'
 import SettingsDeleteButton from './SettingsDeleteButton.jsx'
 import SettingsAddButton from './SettingsAddButton.jsx'
+import ConfirmDeleteDialog from './ConfirmDeleteDialog.jsx'
 
 export default function ManageTechnologyDomains({
   onTechnologyDomainsChange,
   onFeedsChange,
+  onLoadingChange,
+  onBusyChange,
   isAdmin,
   refreshToken = 0,
 }) {
@@ -26,7 +27,8 @@ export default function ManageTechnologyDomains({
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(null)
   const [toggling, setToggling] = useState(null)
-  const [error, setError] = useState('')
+  const [validationError, setValidationError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const fetchDomainPreferences = useCallback(async () => {
     try {
@@ -44,10 +46,21 @@ export default function ManageTechnologyDomains({
     fetchDomainPreferences()
   }, [fetchDomainPreferences, refreshToken])
 
+  useEffect(() => {
+    onLoadingChange?.(!hasFetched)
+  }, [hasFetched, onLoadingChange])
+
+  useEffect(() => {
+    onBusyChange?.(saving || deleting !== null || toggling !== null)
+  }, [saving, deleting, toggling, onBusyChange])
+
   const handleAdd = async () => {
     const trimmed = name.trim()
-    if (!trimmed) { setError('Name is required'); return }
-    setError('')
+    if (!trimmed) {
+      setValidationError('Name is required')
+      return
+    }
+    setValidationError('')
     setSaving(true)
     try {
       await apiFetch(API.technologyDomains, {
@@ -58,34 +71,43 @@ export default function ManageTechnologyDomains({
       onTechnologyDomainsChange()
       onFeedsChange()
       await fetchDomainPreferences()
+      showNotification({ severity: 'success', description: `Category "${trimmed}" added` })
     } catch (e) {
-      setError(e.message.includes('409') ? 'A category with this name already exists' : `Error: ${e.message}`)
+      const msg = e.message.includes('409')
+        ? 'A category with this name already exists'
+        : `Unable to add category: ${e.message}`
+      showNotification({ severity: 'error', description: msg })
     } finally {
       setSaving(false)
     }
   }
 
-  const handleDelete = async domain => {
+  const requestDelete = domain => {
     if (domain.feed_count > 0) {
-      const msg = 'Move or delete feeds assigned to this category first'
-      setError(msg)
-      showNotification({ severity: 'warning', description: msg })
+      showNotification({
+        severity: 'warning',
+        description: 'Move or delete feeds assigned to this category first',
+      })
       return
     }
-    if (!confirm(`Delete "${domain.name}"?`)) return
-    setError('')
-    setDeleting(domain.technology_domain_id)
+    setDeleteTarget(domain)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    const target = deleteTarget
+    setDeleteTarget(null)
+    setDeleting(target.technology_domain_id)
     try {
-      await apiFetch(`${API.technologyDomains}/${domain.technology_domain_id}`, { method: 'DELETE' })
+      await apiFetch(`${API.technologyDomains}/${target.technology_domain_id}`, { method: 'DELETE' })
       onTechnologyDomainsChange()
       onFeedsChange()
       await fetchDomainPreferences()
-      showNotification({ severity: 'success', description: `Category "${domain.name}" deleted` })
+      showNotification({ severity: 'success', description: `Category "${target.name}" deleted` })
     } catch (e) {
       const msg = e.message.includes('409')
         ? 'Move or delete feeds assigned to this category first'
         : `Unable to delete category: ${e.message}`
-      setError(msg)
       showNotification({ severity: 'error', description: msg })
     } finally {
       setDeleting(null)
@@ -94,7 +116,6 @@ export default function ManageTechnologyDomains({
 
   const handleToggle = async domain => {
     setToggling(domain.technology_domain_id)
-    setError('')
     try {
       await apiFetch(API.domainPreferences, {
         method: 'PUT',
@@ -107,9 +128,10 @@ export default function ManageTechnologyDomains({
       })
       await fetchDomainPreferences()
     } catch (e) {
-      const msg = `Unable to update preference: ${e.message}`
-      setError(msg)
-      showNotification({ severity: 'error', description: msg })
+      showNotification({
+        severity: 'error',
+        description: `Unable to update preference: ${e.message}`,
+      })
     } finally {
       setToggling(null)
     }
@@ -124,20 +146,16 @@ export default function ManageTechnologyDomains({
             size="small"
             fullWidth
             value={name}
-            onChange={e => { setName(e.target.value); setError('') }}
+            onChange={e => { setName(e.target.value); setValidationError('') }}
             onKeyDown={e => e.key === 'Enter' && handleAdd()}
             placeholder="New category name"
-            error={Boolean(error)}
+            error={Boolean(validationError)}
+            helperText={validationError || ' '}
           />
           <SettingsAddButton onClick={handleAdd} disabled={saving}>
             {saving ? 'Adding…' : 'Add Category'}
           </SettingsAddButton>
         </Box>
-      )}
-      {error && (
-        <Typography variant="caption" color="error" sx={{ mb: 1, display: 'block', fontSize: 14 }}>
-          {error}
-        </Typography>
       )}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
         {hasFetched && domainPreferences.length === 0 ? (
@@ -145,47 +163,49 @@ export default function ManageTechnologyDomains({
             No categories configured
           </Typography>
         ) : (
-          domainPreferences.map(domain => {
-            const color = TECHNOLOGY_DOMAIN_COLORS[domain.name] || catColor(domain.name)
-            return (
-              <Paper
-                key={domain.technology_domain_id}
-                variant="outlined"
-                className="settings-list-item"
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1.25,
-                  px: 1.5,
-                  py: 0.875,
-                }}
-              >
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
-                <Typography variant="body2" className="settings-body-text" sx={{ flex: 1 }}>
-                  {domain.name}
-                </Typography>
-                <Typography variant="caption" className="settings-muted-text">
-                  {domain.feed_count} feed{domain.feed_count !== 1 ? 's' : ''}
-                </Typography>
-                <Switch
-                  size="small"
-                  color="primary"
-                  checked={!!domain.user_enabled}
-                  onChange={() => handleToggle(domain)}
-                  disabled={toggling === domain.technology_domain_id || !domain.system_enabled}
+          domainPreferences.map(domain => (
+            <Paper
+              key={domain.technology_domain_id}
+              variant="outlined"
+              className="settings-list-item"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+                px: 1.5,
+                py: 0.875,
+              }}
+            >
+              <Typography variant="body2" className="settings-body-text" sx={{ flex: 1 }}>
+                {domain.name}
+              </Typography>
+              <Typography variant="caption" className="settings-muted-text">
+                {domain.feed_count} feed{domain.feed_count !== 1 ? 's' : ''}
+              </Typography>
+              <Switch
+                size="small"
+                color="primary"
+                checked={!!domain.user_enabled}
+                onChange={() => handleToggle(domain)}
+                disabled={toggling === domain.technology_domain_id || !domain.system_enabled}
+              />
+              {isAdmin && (
+                <SettingsDeleteButton
+                  onClick={() => requestDelete(domain)}
+                  title={domain.feed_count > 0 ? 'Remove assigned feeds before deleting' : 'Delete category'}
                 />
-                {isAdmin && (
-                  <SettingsDeleteButton
-                    onClick={() => handleDelete(domain)}
-                    loading={deleting === domain.technology_domain_id}
-                    title={domain.feed_count > 0 ? 'Remove assigned feeds before deleting' : 'Delete category'}
-                  />
-                )}
-              </Paper>
-            )
-          })
+              )}
+            </Paper>
+          ))
         )}
       </Box>
+      <ConfirmDeleteDialog
+        open={Boolean(deleteTarget)}
+        title="Delete category"
+        message={deleteTarget ? `Are you sure you want to delete "${deleteTarget.name}"?` : ''}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </Box>
   )
 }
