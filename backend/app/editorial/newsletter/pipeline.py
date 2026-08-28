@@ -44,6 +44,7 @@ from app.editorial.newsletter.models import (
     NewsletterRenderInput,
     newsletter_article_from_pipeline,
 )
+from app.editorial.newsletter.logo_attachment import build_logo_attachment, ensure_logo_cid_reference
 from app.editorial.newsletter.renderer import NewsletterRenderer
 from app.editorial.selection import SelectionPolicy, SelectionResult, SelectionTier
 from app.infrastructure.database.session import SessionLocal
@@ -526,6 +527,7 @@ def _send_personalized_digests(
             continue
 
         html_body, subject = _render_newsletter(user_articles)
+        html_body = ensure_logo_cid_reference(html_body)
         if not stats.email_subject:
             stats.email_subject = subject
 
@@ -601,6 +603,7 @@ def _send_digest_email(
             subject=subject,
             html_body=html_body,
             recipients=recipients,
+            attachments=[build_logo_attachment()],
         )
     except EmailSendError:
         logger.exception(

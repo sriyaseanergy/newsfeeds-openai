@@ -17,6 +17,7 @@ from app.editorial.newsletter.models import (
     NewsletterRenderConfig,
     NewsletterRenderInput,
 )
+from app.editorial.newsletter.logo_attachment import resolve_logo_src, apply_logo_src
 
 _TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "sample_email_preview.html"
@@ -97,6 +98,10 @@ class NewsletterRenderer:
             f"<title>Executive Intelligence Briefing | {_format_header_date(generated_at)}</title>",
             output,
             count=1,
+        )
+        output = apply_logo_src(
+            output,
+            resolve_logo_src(embed_for_preview=config.embed_logo_for_preview),
         )
 
         if "localhost" in output.lower():

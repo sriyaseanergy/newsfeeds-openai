@@ -36,6 +36,7 @@ class NewsletterRenderConfig(BaseModel):
     summary_signature: str = "— The Editorial Intelligence Desk"
     dashboard_url: str = "https://uat.seanergy.ai/feed-alerts/login"
     generated_at: datetime | None = None
+    embed_logo_for_preview: bool = False
 
 
 class NewsletterRenderInput(BaseModel):

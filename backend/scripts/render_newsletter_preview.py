@@ -456,7 +456,10 @@ def main() -> None:
 
     render_input = NewsletterRenderInput(
         articles=included_articles,
-        config=NewsletterRenderConfig(generated_at=datetime.now().astimezone()),
+        config=NewsletterRenderConfig(
+            generated_at=datetime.now().astimezone(),
+            embed_logo_for_preview=True,
+        ),
     )
     html_output = renderer.render(render_input)
     output_path = args.output.resolve()
