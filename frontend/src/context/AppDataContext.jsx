@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { API } from '../config/api.js'
 import { apiFetch } from '../services/api.js'
-import { DEFAULT_TECHNOLOGY_DOMAINS } from '../constants/categories.js'
 
 const AppDataContext = createContext(null)
 
@@ -20,6 +19,7 @@ function fetchInitialData() {
       apiFetch(API.emails).catch(() => []),
       apiFetch(API.articles).catch(() => []),
       apiFetch(API.technologyDomains).catch(() => null),
+      apiFetch(API.feeds).catch(() => []),
     ])
   }
   return initialLoadPromise
@@ -32,9 +32,8 @@ export function AppDataProvider({ children }) {
   const [recipients, setRecipients] = useState([])
   const [recipientsLoading, setRecipientsLoading] = useState(false)
   const [articles, setArticles] = useState([])
-  const [feedHealth, setFeedHealth] = useState([])
   const [artLoading, setArtLoading] = useState(false)
-  const [healthLoading, setHealthLoading] = useState(false)
+  const [feedsLoading, setFeedsLoading] = useState(false)
 
   const articlesRef = useRef(articles)
   const feedsRef = useRef(feeds)
@@ -69,11 +68,14 @@ export function AppDataProvider({ children }) {
   }, [])
 
   const fetchFeeds = useCallback(async () => {
+    setFeedsLoading(true)
     try {
       const d = await apiFetch(API.feeds)
       setFeeds(Array.isArray(d) ? d : [])
     } catch (e) {
       console.error(e)
+    } finally {
+      setFeedsLoading(false)
     }
   }, [])
 
@@ -83,9 +85,7 @@ export function AppDataProvider({ children }) {
       setTechnologyDomains(Array.isArray(d) ? d : [])
     } catch (e) {
       console.error(e)
-      setTechnologyDomains(
-        DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))
-      )
+      setTechnologyDomains([])
     }
   }, [])
 
@@ -101,15 +101,6 @@ export function AppDataProvider({ children }) {
     }
   }, [])
 
-  const fetchFeedHealth = useCallback(async () => {
-    setHealthLoading(true)
-    try {
-      setFeedHealth([])
-    } finally {
-      setHealthLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
     if (initialLoadResetTimer) {
       clearTimeout(initialLoadResetTimer)
@@ -119,19 +110,19 @@ export function AppDataProvider({ children }) {
     let cancelled = false
     setRecipientsLoading(true)
     setArtLoading(true)
+    setFeedsLoading(true)
 
     fetchInitialData()
-      .then(([emails, arts, domains]) => {
+      .then(([emails, arts, domains, feedList]) => {
         if (cancelled) return
 
         setRecipients(Array.isArray(emails) ? emails : [])
         setArticles(Array.isArray(arts) ? arts : [])
+        setFeeds(Array.isArray(feedList) ? feedList : [])
         if (Array.isArray(domains)) {
           setTechnologyDomains(domains)
         } else {
-          setTechnologyDomains(
-            DEFAULT_TECHNOLOGY_DOMAINS.map((name, idx) => ({ id: String(idx + 1), name }))
-          )
+          setTechnologyDomains([])
         }
       })
       .catch(e => {
@@ -141,6 +132,7 @@ export function AppDataProvider({ children }) {
         if (!cancelled) {
           setRecipientsLoading(false)
           setArtLoading(false)
+          setFeedsLoading(false)
         }
       })
 
@@ -169,16 +161,14 @@ export function AppDataProvider({ children }) {
     recipients,
     recipientsLoading,
     articles,
-    feedHealth,
     artLoading,
-    healthLoading,
+    feedsLoading,
     setRecipients,
     fetchStatus,
     fetchRecipients,
     fetchFeeds,
     fetchTechnologyDomains,
     fetchArticles,
-    fetchFeedHealth,
   }
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>

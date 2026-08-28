@@ -14,6 +14,7 @@ import SettingsAddButton from './SettingsAddButton.jsx'
 export default function AddFeedForm({
   technologyDomains,
   onAdd,
+  onBusyChange,
   isAdmin,
   feeds,
   children,
@@ -39,6 +40,10 @@ export default function AddFeedForm({
       setForm(f => ({ ...f, technology_domain_id: technologyDomains[0].id }))
     }
   }, [form.technology_domain_id, technologyDomains])
+
+  useEffect(() => {
+    onBusyChange?.(saving)
+  }, [saving, onBusyChange])
 
   const handleSubmit = async () => {
     if (!form.name.trim()) { setError('Name is required'); return }

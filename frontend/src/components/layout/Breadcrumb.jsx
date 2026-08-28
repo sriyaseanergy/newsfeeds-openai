@@ -10,9 +10,7 @@ export default function Breadcrumb({ selectedCat }) {
   const location = useLocation();
   const path = location.pathname;
 
-  const pageLabel = path.includes("/feed-health")
-    ? "Feed Health"
-    : path.includes("/settings")
+  const pageLabel = path.includes("/settings")
       ? "Settings"
       : selectedCat || "Articles";
 

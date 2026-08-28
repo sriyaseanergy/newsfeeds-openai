@@ -1,178 +1,189 @@
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
-import CircularProgress from '@mui/material/CircularProgress'
-import { useTheme } from '@mui/material/styles'
-import { catColor } from '../../config/theme.js'
-import { htmlToText, trunc, relativeTime } from '../../utils/format.js'
-import { filterArticles, articleTechnologyDomain } from '../../utils/articles.js'
+import { htmlToText, trunc } from '../../utils/format.js'
+import { filterArticles } from '../../utils/articles.js'
+import CustomLoader from '../CustomLoader.jsx'
+
+function getHostname(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
+}
+
+function getFaviconUrl(url) {
+  const host = getHostname(url)
+  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : ''
+}
 
 function formatPublishedDate(dateStr) {
   if (!dateStr) return ''
-  let d = String(dateStr)
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(d)) d = d.replace(' ', 'T') + 'Z'
-  const parsed = new Date(d)
+  const parsed = new Date(dateStr)
   if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString().slice(0, 10)
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
-export default function ArticleList({ articles, selectedCat, typeFilter, loading, feeds, technologyDomains }) {
-  const theme = useTheme()
-  const items = filterArticles(articles || [], selectedCat, typeFilter, feeds, technologyDomains)
-
-  if (loading) {
-    return (
-      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <CircularProgress size={20} />
-      </Box>
-    )
-  }
-
-  if (!items.length) {
-    return (
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 1,
-          color: 'text.secondary',
-        }}
-      >
-        <Typography sx={{ fontSize: 28, opacity: 0.2 }}>○</Typography>
-        <Typography variant="body2">No articles match these filters</Typography>
-      </Box>
-    )
-  }
+function SourceBadge({ name, url }) {
+  const [failed, setFailed] = useState(false)
+  const favicon = getFaviconUrl(url)
 
   return (
-    <Box sx={{ flex: 1, overflowY: 'auto' }}>
-      {items.slice(0, 80).map(a => {
-        const categoryName = articleTechnologyDomain(a, feeds, technologyDomains)
-        const color = catColor(categoryName || '')
-        const accBar = a.type === 'Security' ? theme.palette.error.main : color
-        const link = a.url && String(a.url).trim()
-        const desc = trunc(htmlToText(a.summary || ''), 200)
-        const sourceName = feeds.find(f => f.id === a.feed_id)?.name || ''
-        const imageUrl = a.image_url && String(a.image_url).trim()
-        const publishedDate = formatPublishedDate(a.published_at)
+    <Box className="article-feed-source">
+      {favicon && !failed ? (
+        <Box
+          component="img"
+          src={favicon}
+          alt=""
+          className="article-feed-favicon"
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Box className="article-feed-favicon article-feed-favicon--fallback">
+          {(name || '?').charAt(0).toUpperCase()}
+        </Box>
+      )}
+      <Typography className="article-feed-source-name">{name}</Typography>
+    </Box>
+  )
+}
 
-        return (
-          <Box
-            key={a.id || a.url || a.title}
-            onClick={() => link && window.open(link, '_blank', 'noopener')}
-            sx={{
-              display: 'flex',
-              cursor: link ? 'pointer' : 'default',
-              borderBottom: 1,
-              borderColor: 'divider',
-              transition: 'background 150ms ease',
-              '&:hover': {
-                bgcolor: theme.palette.mode === 'dark' ? 'rgba(49,133,36,0.08)' : 'rgba(49,133,36,0.05)',
-              },
-            }}
-          >
-            <Box sx={{ width: 3, bgcolor: accBar, flexShrink: 0 }} />
-            <Box
-              sx={{
-                flex: 1,
-                p: '10px 14px',
-                minWidth: 0,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 1.25,
-              }}
-            >
-              {imageUrl && (
-                <Box
-                  component="img"
-                  src={imageUrl}
-                  alt=""
-                  sx={{
-                    width: 76,
-                    height: 76,
-                    flexShrink: 0,
-                    objectFit: 'cover',
-                    borderRadius: 1,
-                    bgcolor: 'action.hover',
-                  }}
-                  onError={event => {
-                    event.currentTarget.style.display = 'none'
-                  }}
-                />
-              )}
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.625, mb: 0.5 }}>
-                  {sourceName && (
-                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                      {trunc(sourceName, 24)}
-                    </Typography>
-                  )}
-                  {publishedDate && (
-                    <>
-                      {sourceName && (
-                        <Typography variant="caption" color="text.disabled">·</Typography>
-                      )}
-                      <Typography variant="caption" color="text.disabled">
-                        {publishedDate}
-                      </Typography>
-                    </>
-                  )}
-                  {categoryName && (
-                    <>
-                      {(sourceName || publishedDate) && (
-                        <Typography variant="caption" color="text.disabled">·</Typography>
-                      )}
-                      <Typography variant="caption" color="text.disabled" sx={{ textTransform: 'uppercase' }}>
-                        {categoryName}
-                      </Typography>
-                    </>
-                  )}
-                  {!publishedDate && a.published_at && (
-                    <>
-                      {sourceName && (
-                        <Typography variant="caption" color="text.disabled">·</Typography>
-                      )}
-                      <Typography variant="caption" color="text.disabled">
-                        {relativeTime(a.published_at)}
-                      </Typography>
-                    </>
-                  )}
-                </Box>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    lineHeight: 1.45,
-                    mb: desc ? 0.5 : 0,
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                  }}
-                >
-                  {a.title || 'Untitled'}
-                </Typography>
-                {desc && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{
-                      lineHeight: 1.5,
-                      overflow: 'hidden',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                    }}
-                  >
-                    {desc}
-                  </Typography>
-                )}
-              </Box>
-            </Box>
-          </Box>
-        )
-      })}
+function ArticleThumb({ imageUrl }) {
+  const [failed, setFailed] = useState(false)
+  if (!imageUrl || failed) return null
+
+  return (
+    <Box
+      component="img"
+      src={imageUrl}
+      alt=""
+      className="article-feed-thumb"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  )
+}
+
+function ArticleRow({ article, feed }) {
+  const link = article.url && String(article.url).trim()
+  const sourceName = feed?.name || getHostname(article.url) || 'Source'
+  const sourceUrl = feed?.url || article.url || ''
+  const imageUrl = article.image_url && String(article.image_url).trim()
+  const publishedDate = formatPublishedDate(article.published_at)
+  const author = article.author && String(article.author).trim()
+  const summary = trunc(htmlToText(article.summary || ''), 120)
+
+  const metaParts = []
+  if (author) metaParts.push(`By ${author}`)
+  if (publishedDate) metaParts.push(publishedDate)
+
+  return (
+    <Box
+      className="article-feed-row"
+      onClick={() => link && window.open(link, '_blank', 'noopener')}
+      sx={{ cursor: link ? 'pointer' : 'default' }}
+    >
+      <Box className="article-feed-content">
+        <SourceBadge name={sourceName} url={sourceUrl} />
+        <Typography className="article-feed-title">
+          {article.title || 'Untitled'}
+        </Typography>
+        {metaParts.length > 0 && (
+          <Typography className="article-feed-meta">
+            {metaParts.join(' · ')}
+          </Typography>
+        )}
+        {summary && (
+          <Typography className="article-feed-summary">
+            {summary}
+          </Typography>
+        )}
+      </Box>
+      <ArticleThumb imageUrl={imageUrl} />
+    </Box>
+  )
+}
+
+function ArticleColumn({ items, feeds }) {
+  return (
+    <Box className="articles-feed-column">
+      {items.map(article => (
+        <ArticleRow
+          key={article.id || article.url || article.title}
+          article={article}
+          feed={feeds.find(f => f.id === article.feed_id)}
+        />
+      ))}
+    </Box>
+  )
+}
+
+export default function ArticleList({
+  articles,
+  selectedCat,
+  loading,
+  feeds,
+  technologyDomains,
+}) {
+  const items = useMemo(
+    () => filterArticles(articles || [], selectedCat, feeds, technologyDomains),
+    [articles, selectedCat, feeds, technologyDomains],
+  )
+
+  const [renderReady, setRenderReady] = useState(false)
+
+  useEffect(() => {
+    if (loading) {
+      setRenderReady(false)
+      return undefined
+    }
+
+    if (!items.length) {
+      setRenderReady(true)
+      return undefined
+    }
+
+    setRenderReady(false)
+    let cancelled = false
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) setRenderReady(true)
+      })
+    })
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [loading, selectedCat, items])
+
+  const showLoader = loading || !renderReady
+  const visible = items.slice(0, 80)
+  const splitAt = Math.ceil(visible.length / 2)
+  const leftItems = visible.slice(0, splitAt)
+  const rightItems = visible.slice(splitAt)
+
+  return (
+    <Box className="articles-page-body articles-page-body--relative">
+      {showLoader && <CustomLoader />}
+      {!loading && !items.length ? (
+        <Box className="articles-page-empty">
+          <Typography className="articles-muted-text">No articles in this category</Typography>
+        </Box>
+      ) : (
+        <Box className="articles-feed-grid">
+          <ArticleColumn items={leftItems} feeds={feeds} />
+          {rightItems.length > 0 && (
+            <ArticleColumn items={rightItems} feeds={feeds} />
+          )}
+        </Box>
+      )}
     </Box>
   )
 }

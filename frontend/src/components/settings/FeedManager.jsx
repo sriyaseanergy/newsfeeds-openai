@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Switch from '@mui/material/Switch'
@@ -11,13 +11,19 @@ import { useNotification } from '../notificationController.tsx'
 import { TECHNOLOGY_DOMAIN_COLORS } from '../../constants/categories.js'
 import { normalizeTechnologyDomain, technologyDomainNames } from '../../utils/articles.js'
 import SettingsDeleteButton from './SettingsDeleteButton.jsx'
+import ConfirmDeleteDialog from './ConfirmDeleteDialog.jsx'
 
-export default function FeedManager({ feeds, technologyDomains, onFeedsChange, isAdmin }) {
+export default function FeedManager({ feeds, technologyDomains, onFeedsChange, onBusyChange, isAdmin }) {
   const theme = useTheme()
   const { showNotification } = useNotification()
   const [toggling, setToggling] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const orderedTechnologyDomains = technologyDomainNames(technologyDomains)
+
+  useEffect(() => {
+    onBusyChange?.(toggling !== null || deleting !== null)
+  }, [toggling, deleting, onBusyChange])
 
   const handleToggle = async feed => {
     setToggling(feed.id)
@@ -41,15 +47,17 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, i
     }
   }
 
-  const handleDelete = async feed => {
-    if (!confirm(`Delete "${feed.name}"? This cannot be undone.`)) return
-    setDeleting(feed.id)
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    const target = deleteTarget
+    setDeleteTarget(null)
+    setDeleting(target.id)
     try {
-      await apiFetch(`${API.feeds}/${feed.id}`, { method: 'DELETE' })
+      await apiFetch(`${API.feeds}/${target.id}`, { method: 'DELETE' })
       onFeedsChange()
       showNotification({
         severity: 'success',
-        description: `Feed "${feed.name}" deleted`,
+        description: `Feed "${target.name}" deleted`,
       })
     } catch (e) {
       showNotification({
@@ -135,8 +143,7 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, i
                         disabled={toggling === feed.id}
                       />
                       <SettingsDeleteButton
-                        onClick={() => handleDelete(feed)}
-                        loading={deleting === feed.id}
+                        onClick={() => setDeleteTarget(feed)}
                         title="Delete feed"
                       />
                     </>
@@ -147,6 +154,17 @@ export default function FeedManager({ feeds, technologyDomains, onFeedsChange, i
           </Box>
         )
       })}
+      <ConfirmDeleteDialog
+        open={Boolean(deleteTarget)}
+        title="Delete feed"
+        message={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`
+            : ''
+        }
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </Box>
   )
 }

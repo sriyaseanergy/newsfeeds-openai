@@ -8,7 +8,6 @@ import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined'
 import PsychologyOutlinedIcon from '@mui/icons-material/PsychologyOutlined'
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined'
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined'
-import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined'
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
 
 const iconStyle = { width: 20, height: 20, display: 'block' }
@@ -139,10 +138,6 @@ export function IconLightbulb() {
 
 export function IconArticle() {
   return <DescriptionOutlinedIcon {...menuIconProps} />
-}
-
-export function IconFeedHealth() {
-  return <MonitorHeartOutlinedIcon {...menuIconProps} />
 }
 
 export function IconSettings() {
