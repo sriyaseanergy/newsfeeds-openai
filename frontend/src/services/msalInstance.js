@@ -14,6 +14,7 @@ export function getMsalRedirectUri() {
   const base = import.meta.env.BASE_URL || "/";
   const path = base.startsWith("/") ? base : `/${base}`;
   const withSlash = path.endsWith("/") ? path : `${path}/`;
+  console.log("MSAL redirect URI:", `${window.location.origin}${withSlash}`);
   return `${window.location.origin}${withSlash}`;
 }
 
@@ -38,7 +39,7 @@ export function getMsalInstance() {
       authority: `https://login.microsoftonline.com/${tid}`,
       redirectUri: getMsalRedirectUri(),
     },
-    cache: { cacheLocation: "sessionStorage" },
+    cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false },
   });
   return _instance;
 }
