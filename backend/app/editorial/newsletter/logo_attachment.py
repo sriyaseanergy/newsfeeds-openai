@@ -9,11 +9,12 @@ from app.notifications.email.models import EmailAttachment
 LOGO_FILENAME = "seanergy-email-logo.png"
 LOGO_CONTENT_ID = LOGO_FILENAME
 LOGO_PATH = Path(__file__).resolve().parent / "templates" / LOGO_FILENAME
+LOGO_RELATIVE_SRC = LOGO_FILENAME
 LOGO_SRC_PLACEHOLDER = "__LOGO_SRC__"
 LOGO_IMG_SRC = f"cid:{LOGO_CONTENT_ID}"
 
 _LOGO_IMG_PATTERN = re.compile(
-    r'(<img src=")(?:__LOGO_SRC__|cid:[^"]+|data:image/[^"]+)(" alt="Seanergy\.ai"[^>]*/>)',
+    rf'(<img src=")(?:{re.escape(LOGO_SRC_PLACEHOLDER)}|{re.escape(LOGO_RELATIVE_SRC)}|cid:[^"]+|data:image/[^"]+)(" alt="Seanergy\.ai"[^>]*/>)',
     re.IGNORECASE,
 )
 

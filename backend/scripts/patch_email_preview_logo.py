@@ -75,7 +75,7 @@ NEW_HEAD_STYLE = """  <meta name="color-scheme" content="light dark">
 
 def main() -> None:
     new_img = (
-        '                <img src="__LOGO_SRC__" alt="Seanergy.ai" width="180" height="32" '
+        '                <img src="seanergy-email-logo.png" alt="Seanergy.ai" width="180" height="32" '
         'class="brand-logo" style="display:block;border:0;outline:none;text-decoration:none;'
         'height:32px;width:auto;max-width:180px;filter:invert(1);" />'
     )
@@ -91,7 +91,7 @@ def main() -> None:
     )
 
     html = re.sub(
-        r'<img src="(?:__LOGO_SRC__|data:image/[^"]+|cid:[^"]+)" alt="Seanergy\.ai"[^>]*/>',
+        r'<img src="(?:__LOGO_SRC__|seanergy-email-logo\.png|data:image/[^"]+|cid:[^"]+)" alt="Seanergy\.ai"[^>]*/>',
         new_img,
         html,
         count=1,
