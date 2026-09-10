@@ -10,8 +10,8 @@ import seasignalBg from "../../assets/images/seasignal-bg.png";
 import { API } from "../../config/api.js";
 import { persistEmployee } from "../../services/auth.js";
 import {
-  getMsalInstance,
   getMsalRedirectUri,
+  initializeMsal,
   loginRequest,
 } from "../../services/msalInstance.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -74,8 +74,7 @@ export default function LoginPage() {
   const signIn = useCallback(async () => {
     setBusy(true);
     try {
-      const msal = getMsalInstance();
-      await msal.initialize();
+      const msal = await initializeMsal();
       msal.setActiveAccount(null);
       const res = await msal.loginPopup({
         ...loginRequest,

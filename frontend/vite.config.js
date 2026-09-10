@@ -87,8 +87,12 @@ export default defineConfig(({ mode }) => {
       server.middlewares.use((req, res, next) => {
         const urlPath = (req.url || "").split("?")[0];
         if (urlPath === "/" || urlPath === `/${frontendSegment}`) {
-          res.writeHead(302, { Location: `/${frontendSegment}/` });
-          res.end();
+          // Use a client-side redirect so OAuth hash fragments (#code=...) are preserved.
+          // HTTP 302 redirects drop the hash because it never reaches the server.
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><script>
+location.replace("/${frontendSegment}/" + (location.search || "") + (location.hash || ""));
+</script></head><body></body></html>`);
           return;
         }
         next();

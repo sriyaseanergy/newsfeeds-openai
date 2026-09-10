@@ -17,8 +17,13 @@ export function getMsalRedirectUri() {
   return `${window.location.origin}${withSlash}`;
 }
 
+export function isMsalConfigured() {
+  return !!(tenantId() && clientId());
+}
+
 let _instance;
 let _instanceConfigKey = "";
+let _initializePromise = null;
 
 /** Singleton MSAL client (lazy). Recreated when tenant/client env changes. */
 export function getMsalInstance() {
@@ -32,11 +37,13 @@ export function getMsalInstance() {
     );
   }
   _instanceConfigKey = configKey;
+  _initializePromise = null;
   _instance = new PublicClientApplication({
     auth: {
       clientId: cid,
       authority: `https://login.microsoftonline.com/${tid}`,
       redirectUri: getMsalRedirectUri(),
+      navigateToLoginRequestUrl: false,
     },
     cache: { cacheLocation: "sessionStorage" },
   });
@@ -47,16 +54,100 @@ export const loginRequest = {
   scopes: ["openid", "profile", "email"],
 };
 
+function isHashEmptyError(error) {
+  const code = String(error?.errorCode || "").toLowerCase();
+  const message = String(
+    error?.message || error?.errorMessage || "",
+  ).toLowerCase();
+  return (
+    code === "hash_empty_error" ||
+    message.includes("hash value cannot be processed") ||
+    message.includes("redirecturi is not clearing the hash")
+  );
+}
+
+/** Drop stale redirect interaction keys when the URL hash was already cleared. */
+function clearStaleRedirectInteractionState() {
+  const cid = clientId();
+  if (!cid || typeof window === "undefined") return;
+  const prefix = `msal.${cid.toLowerCase()}`;
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+      const key = sessionStorage.key(i);
+      if (!key) continue;
+      const normalized = key.toLowerCase();
+      if (
+        normalized.startsWith(prefix) &&
+        normalized.includes("interaction")
+      ) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
+async function consumeRedirectResponse(msal) {
+  try {
+    const response = await msal.handleRedirectPromise();
+    if (response?.account) {
+      msal.setActiveAccount(response.account);
+    }
+    return response;
+  } catch (error) {
+    if (isHashEmptyError(error)) {
+      clearStaleRedirectInteractionState();
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Initialize MSAL once and consume any redirect hash before the router navigates.
+ * Safe to call from login, logout, token refresh, and app bootstrap.
+ */
+export async function initializeMsal() {
+  if (!isMsalConfigured()) return null;
+  if (!_initializePromise) {
+    _initializePromise = (async () => {
+      const msal = getMsalInstance();
+      await msal.initialize();
+      await consumeRedirectResponse(msal);
+      return msal;
+    })().catch((error) => {
+      _initializePromise = null;
+      throw error;
+    });
+  }
+  return _initializePromise;
+}
+
 /** Restore MSAL active account from cache (needed after page reload). */
 export async function ensureMsalAccount() {
-  const msal = getMsalInstance();
-  await msal.initialize();
+  const msal = await initializeMsal();
+  if (!msal) return null;
   const active = msal.getActiveAccount();
   if (active) return active;
   const accounts = msal.getAllAccounts();
   if (!accounts.length) return null;
   msal.setActiveAccount(accounts[0]);
   return accounts[0];
+}
+
+/** Clear cached MSAL tokens locally without opening a Microsoft logout popup. */
+export async function clearLocalMsalSession() {
+  if (!isMsalConfigured()) return;
+  try {
+    const msal = await initializeMsal();
+    if (!msal) return;
+    msal.setActiveAccount(null);
+    await msal.clearCache();
+    clearStaleRedirectInteractionState();
+  } catch {
+    /* ignore */
+  }
 }
 
 /** Acquire a fresh Azure AD ID token for backend Bearer auth. Returns null when unauthenticated. */
