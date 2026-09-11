@@ -17,7 +17,7 @@ from app.editorial.newsletter.models import (
     NewsletterRenderConfig,
     NewsletterRenderInput,
 )
-from app.editorial.newsletter.logo_attachment import resolve_logo_src, apply_logo_src
+from app.editorial.newsletter.logo_attachment import apply_logo_sources, resolve_logo_src
 
 _TEMPLATE_PATH = (
     Path(__file__).resolve().parent / "templates" / "sample_email_preview.html"
@@ -99,9 +99,16 @@ class NewsletterRenderer:
             output,
             count=1,
         )
-        output = apply_logo_src(
+        output = apply_logo_sources(
             output,
-            resolve_logo_src(embed_for_preview=config.embed_logo_for_preview),
+            light_src=resolve_logo_src(
+                embed_for_preview=config.embed_logo_for_preview,
+                variant="light",
+            ),
+            dark_src=resolve_logo_src(
+                embed_for_preview=config.embed_logo_for_preview,
+                variant="dark",
+            ),
         )
 
         if "localhost" in output.lower():

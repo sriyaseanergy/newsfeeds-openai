@@ -44,7 +44,7 @@ from app.editorial.newsletter.models import (
     NewsletterRenderInput,
     newsletter_article_from_pipeline,
 )
-from app.editorial.newsletter.logo_attachment import build_logo_attachment, ensure_logo_cid_reference
+from app.editorial.newsletter.logo_attachment import build_logo_attachments, ensure_logo_cid_reference
 from app.editorial.newsletter.renderer import NewsletterRenderer
 from app.editorial.selection import SelectionPolicy, SelectionResult, SelectionTier
 from app.infrastructure.database.session import SessionLocal
@@ -603,7 +603,7 @@ def _send_digest_email(
             subject=subject,
             html_body=html_body,
             recipients=recipients,
-            attachments=[build_logo_attachment()],
+            attachments=build_logo_attachments(),
         )
     except EmailSendError:
         logger.exception(

@@ -18,7 +18,7 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
-from app.editorial.newsletter.logo_attachment import build_logo_attachment, ensure_logo_cid_reference
+from app.editorial.newsletter.logo_attachment import build_logo_attachments, ensure_logo_cid_reference
 from app.infrastructure.logging import configure_logging, get_logger
 from app.notifications.email.service import EmailService
 from sqlalchemy import text
@@ -112,7 +112,7 @@ def main() -> None:
         subject=subject,
         html_body=html_body,
         recipients=recipients,
-        attachments=[build_logo_attachment()],
+        attachments=build_logo_attachments(),
     )
 
     print(f"Newsletter sent to: {', '.join(recipients)}")
