@@ -6,22 +6,25 @@ from pathlib import Path
 
 from app.notifications.email.models import EmailAttachment
 
-LOGO_FILENAME = "seanergy-email-logo.png"
-LOGO_CONTENT_ID = LOGO_FILENAME
-LOGO_PATH = Path(__file__).resolve().parent / "templates" / LOGO_FILENAME
-LOGO_RELATIVE_SRC = LOGO_FILENAME
-LOGO_SRC_PLACEHOLDER = "__LOGO_SRC__"
+# White source asset (design reference only).
+LOGO_SOURCE_FILENAME = "seanergy-email-logo.png"
+# Black wordmark baked for email clients (Outlook/Gmail ignore CSS filters).
+LOGO_EMAIL_FILENAME = "seanergy-email-logo-dark.png"
+
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+LOGO_PATH = _TEMPLATES_DIR / LOGO_EMAIL_FILENAME
+LOGO_CONTENT_ID = LOGO_EMAIL_FILENAME
+LOGO_RELATIVE_SRC = LOGO_EMAIL_FILENAME
 LOGO_IMG_SRC = f"cid:{LOGO_CONTENT_ID}"
 
 _LOGO_IMG_PATTERN = re.compile(
-    rf'(<img src=")(?:{re.escape(LOGO_SRC_PLACEHOLDER)}|{re.escape(LOGO_RELATIVE_SRC)}|cid:[^"]+|data:image/[^"]+)(" alt="Seanergy\.ai"[^>]*/>)',
+    rf'(<img src=")(?:{re.escape(LOGO_RELATIVE_SRC)}|{re.escape(LOGO_SOURCE_FILENAME)}|cid:[^"]+|data:image/[^"]+)(" alt="Seanergy\.ai"[^>]*/>)',
     re.IGNORECASE,
 )
 
 
 def build_logo_data_uri() -> str:
-    logo_bytes = LOGO_PATH.read_bytes()
-    encoded = base64.b64encode(logo_bytes).decode("ascii")
+    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
 
@@ -46,7 +49,7 @@ def ensure_logo_cid_reference(html: str) -> str:
 def build_logo_attachment() -> EmailAttachment:
     logo_bytes = LOGO_PATH.read_bytes()
     return EmailAttachment(
-        filename=LOGO_FILENAME,
+        filename=LOGO_EMAIL_FILENAME,
         content_type="image/png",
         content_bytes_base64=base64.b64encode(logo_bytes).decode("ascii"),
         content_id=LOGO_CONTENT_ID,
