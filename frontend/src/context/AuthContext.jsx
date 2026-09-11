@@ -7,8 +7,7 @@ import {
 } from "react";
 import { readStoredEmployee, clearStoredEmployee, persistEmployee } from "../services/auth.js";
 import {
-  getMsalInstance,
-  getMsalRedirectUri,
+  clearLocalMsalSession,
   ensureMsalAccount,
 } from "../services/msalInstance.js";
 
@@ -34,13 +33,7 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     clearStoredEmployee();
     setSessionEmployee(null);
-    try {
-      const msal = getMsalInstance();
-      await msal.initialize();
-      await msal.logoutPopup({ postLogoutRedirectUri: getMsalRedirectUri() });
-    } catch {
-      /* ignore */
-    }
+    await clearLocalMsalSession();
   }, []);
 
   return (
